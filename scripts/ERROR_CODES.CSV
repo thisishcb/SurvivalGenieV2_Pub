@@ -1,0 +1,9 @@
+Code,Message,Describe
+IT001,"Only first five dataset selections will be used","errors about number of datasets; 0 or > 5 or not exist"
+IT002,"No {} data for the chosen {}","gene exp/gene data missing"
+IT003,"No clinical survival available for the chosen Dataset/Tumor Type","os data missing"
+IT004,"Not enough events for survival analysis in dataset","Not enough data after filtering",
+IT005,"Gene not found or has no expression!",
+IT006,"Only one gene is provided for gene ratio analysis; Two are required",
+IT007,"Cluster marker file does not exist.", "Cluster marker file for scRNA analysis does not exist."
+IT008,"Cluster markers are empty after filtering p_adj<0.05.", "No cluster/markerl eft after filtering"

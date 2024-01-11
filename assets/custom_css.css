@@ -1,0 +1,125 @@
+/* restyle radio items */
+.radio-group .form-check {
+    padding-left: 0;
+  }
+  
+  .radio-group .btn-group > .form-check:not(:last-child) > .btn {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  
+  .radio-group .btn-group > .form-check:not(:first-child) > .btn {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    margin-left: -1px;
+  }
+  
+  .radio-group .btn-group .btn {
+    white-space: nowrap;
+  }
+/* vertical ratio butn group */
+/* adopted from https://community.plotly.com/t/vertically-stack-radioitems-as-buttongroup/72302/4 */
+
+.radio-group-v {
+  flex-direction: column;
+}
+
+.radio-group-v .form-check {
+  padding-left: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.radio-group-v .btn-group-vertical > .form-check:not(:last-child) > .btn {
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+  border-bottom: initial;
+}
+
+.radio-group-v .btn-group-vertical > .form-check:not(:first-child) > .btn {
+  border-top-right-radius: 0;
+  border-top-left-radius: 0;
+}
+
+.radio-group-v .btn-group-vertical .btn {
+  width: 200px;
+}
+
+/* sliders with reversed color */
+  .rev-slider .rc-slider-rail {
+    background-color: #4582ec;
+  }
+  .rev-slider .rc-slider-track {
+    background-color: #ced4da;
+  }
+
+  .rev-slider  .rc-slider-dot {  
+    border-color: #4582ec;
+    border: solid 2px #4582ec;
+  }
+
+  .rev-slider  .rc-slider-dot-active {  
+    border-color: #ced4da;
+    border: solid 2px #ced4da;
+  }
+  
+  .rev-slider  .rc-slider-handle {
+    background-color: #ced4da;
+    border-color: #4582ec;
+  }
+  
+  .rev-slider  .rc-slider-handle:hover {
+    border-color: #ced4da;
+  }
+  
+  .rev-slider  .rc-slider-handle-active:active {
+    border-color: #ced4da;
+  }
+
+/* uploader from https://dash-building-blocks.com/uploaders */
+
+.pty-uploader {
+  border: 1px dashed rgb(206, 212, 218);
+  border-radius: 5px;
+  max-width: 420px;
+}
+
+.pty-uploader .pty-contents {
+  padding: 1rem 1rem 3.125rem
+}
+
+.pty-uploader .upload-button {
+  position: absolute; 
+  bottom: -1.2rem;
+  width: 15.625rem;
+}
+
+.pty-uploader .upload-icon {
+  color: rgb(24, 49, 83)
+}
+
+.pty-uploader .upload-text {
+  color: rgb(134, 142, 150)
+}
+
+/* page spinner */
+#loading {
+  display: none !important;
+}
+
+body:has(#_pages_content[data-dash-is-loading="true"]) #loading {
+  display: flex !important;
+}
+
+/* bigger radio checkbox */
+
+/* .dash-table-container .dash-spreadsheet-container .dash-select-cell input {
+  transform: scale(1.3);
+} */
+
+/* always show slidebar so when the collapse opens, no sudden change in x-axis */
+html {
+  overflow-y:scroll; 
+}
