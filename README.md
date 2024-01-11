@@ -26,7 +26,10 @@ Survical Genie Version 2 is now available on [https://bhasinlab.bmi.emory.edu/Su
 
  - for [wrapped wgcna function](./scripts/get_wgcna_result.R):
 ```{R}
-source("")
+library(Seurat)
+library(WGCNA)
+library(hdWGCNA)
+source("https://raw.githubusercontent.com/bhasin-lab/SurvivalGenieV2/main/scripts/get_wgcna_result.R")
 # following parameters are by default, see the script for more information and full parameters
 your_seurat_obj |> get_wgcna_result(
     meta_cols = "orig.ident",
