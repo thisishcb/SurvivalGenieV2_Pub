@@ -9,18 +9,21 @@ Survical Genie Version 2 is now available on [https://bhasinlab.bmi.emory.edu/Su
    - You can now select whether to use only Pediatric cases or Adult cases or All cases.
    - Currently, the groups are defined by age cutoff of 20 years old at diagnosis.
  - 🆕 Result Retrieval 
-   - You can access previous results with your analysis with in 24 hours!
+   - You can access previous results with your analysis ID within 24 hours!
  - 🆕 Co-expression Module Analysis
-   - you can input wgcna modules (or another co-expression networks as long as the column names are compliant) for Survival Analysis in supported public datasets
-   - ❓Have No Experience in Co-expression network?
+   - Perform the survival analysis based on the High/Low groups partitioned by the GeneSet Variation Score (GSVA) of the module (hub-)genes in a selected dataset (results are calculated per module).
+   - you can now input wgcna modules (or any other co-expression networks as long as the column names are compliant, details see [page](https://bhasinlab.bmi.emory.edu/SurvivalGenie2/coexp-module/input)) for Survival Analysis in a selected dataset.
+   - ❓Have No Experience in Co-expression Network?
      - if you are using single-cell data: https://smorabit.github.io/hdWGCNA/
      - or use our wrapped function [here](./scripts/get_wgcna_result.R) [hdWGCNA based] - tutorial see [Tutorial](#tutorial)
  - Single Gene Analysis 
-   - Perform the survival analysis based on the High/Low groups partitioned by the expression profile of a single gene in supported public datasets
+   - Perform the survival analysis based on the High/Low groups partitioned by the expression profile of a single gene in supported public datasets.
  - Gene-Ratio Analysis
-   - Perform the survival analysis based on the High/Low groups partitioned by the expression ratio of two genes in supported public datasets
- - Gene-Ratio Analysis
-   - Perform the survival analysis based on the High/Low groups partitioned by the expression ratio of two genes in supported public datasets
+   - Perform the survival analysis based on the High/Low groups partitioned by the expression ratio of two genes in supported public datasets.
+ - Gene-Set Analysis
+   - Perform the survival analysis based on the High/Low groups partitioned by the GeneSet Variation Score (GSVA) of the geneset in supported public datasets.
+ - Cluster Marker Analysis
+   - Perform the survival analysis based on the High/Low groups partitioned by the GeneSet Variation Score (GSVA) of the cluster markers in a selected dataset (results are calculated per cluster).
 ## Tutorial
  - Tutorial for the website (Explanation of Inputs and Outputs) is available on [SurvivalGenie2 home page](https://bhasinlab.bmi.emory.edu/SurvivalGenie2/home) or check higher resolution [figures](./static/).  
 
