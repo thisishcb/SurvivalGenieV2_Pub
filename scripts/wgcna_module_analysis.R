@@ -10,6 +10,8 @@ TEST <- FALSE
 option_list <- list(
     make_option("--session_id", default="tmp",
         help = "session_id to write results to."),
+    make_option(c('-F',"--use_file"), type="character", default='',
+        help = "whether to get parameter directly from session file",),
     make_option(c("-A", "--analysis_type"), type="character",
         help="Analysis Type [scRNA, SingleGene, GeneSet, ...]",
         metavar="number"),
@@ -43,7 +45,7 @@ option_list <- list(
         help = "filters apply to the input genes. [all, lnc, tf]")
     )
 parser <-OptionParser(option_list=option_list)
-args <- parse_args(parser, positional_arguments=TRUE)
+cmd_args <- parse_args(parser, positional_arguments=TRUE)
 # print(args)
 # args
 
@@ -56,7 +58,8 @@ suppressPackageStartupMessages(library("survival"))
 if (TEST){
     args = list(
     options = list(
-        session_id="tmp_wgcna_",
+        session_id="9e7dedc9159c4e94b75654a81f6f3d27", #"tmp",
+        use_file = "/opt/megaseq-data/SurvivalGenie2_Dash/test_scripts/session_outputs_tmp/9e7dedc9159c4e94b75654a81f6f3d27_visualization.json",
         analysis_type="wgcna_module",
         input_type = 'example_data',
         datasets="TCGA-ACC",
@@ -73,29 +76,33 @@ if (TEST){
     )
 }
 
+if (cmd_args$options$use_file != '') {
+    paramfromf = jsonlite::read_json(cmd_args$options$use_file)
+    pyparams = paramfromf[["params"]]
+    args = paramfromf[["rparams"]]
+} else {
+    args = cmd_args
+    paramfromf = list(rparams = args)
+}
 
-FILE_DIR = "SurvivalGenie/data"
-FPKM_DIR = "GDC_FPKM"
-MAF_DIR = "GDC_MAF"
-ICC_DIR = "CIBERSOFT"
-TARGET_DIR = "TARGET_EXCEL_CLINICAL"
-# CLUSTER_DIR = "geneSet_cluster"
+setwd(args$options$wd)
 
 SCRIPT_PATH = "functions"
+source(paste(SCRIPT_PATH,"paths.R",sep="/"))
 
 # ====================================
 #            Analysis
 # ====================================
 
 
-setwd(args$options$wd)
+source(paste(SCRIPT_PATH,"load_files.R",sep="/"))
 source(paste(SCRIPT_PATH,"find_cutp.R",sep="/"))
 source(paste(SCRIPT_PATH,"callGSVA.R",sep="/"))
 source(paste(SCRIPT_PATH,"callZSCORE.R",sep="/"))
 source(paste(SCRIPT_PATH,"filter_ages.R",sep="/"))
 
 if(args$options$input_type == "example_data"){ #if an example gene set
-    dataFile <- paste("../data", "module_hub_genes.csv", sep='/')
+    dataFile <- paste(FILE_DIR, EXAMPLE_DIR, "reduced_module_hub_genes.csv",sep='/')#"../data", "module_hub_genes.csv"
     if (!file.exists( dataFile) ){
         write("[IT007] Module Eigen-gene file does not exist.\n", stderr())
         stop()
@@ -126,11 +133,14 @@ if(args$options$input_type == "example_data"){ #if an example gene set
     }
 }
 
-if((!("gene_name" %in% colnames(sig_list))) ||
-   (!("module" %in% colnames(sig_list)))
-    ) {
-    write("[IT008] One or more equired columns are not in the file provided\n", stderr())
-    stop()
+
+colnames(sig_list) <- tolower(colnames(sig_list))
+# check whether requires columns present
+for (req_col in c("gene_name", "module")) {
+    if(!(req_col %in% colnames(sig_list))) {
+        write(paste0("[IT008] Required column [",req_col,"] is not in the file provided\n"), stderr())
+        stop()
+    }
 }
 
 if ("kME" %in% colnames(sig_list)) {
@@ -147,9 +157,9 @@ if (args$options$gene_filter == "lnc") {
     sig_list <- subset(sig_list, sig_list$gene_name %in% tfref)
 } else if (args$options$gene_filter == "lr") {
     lrref = read.table(paste(REF_DIR, "approved_lr.txt", sep='/'),header=F)[["V1"]]
-    sig_list <- subset(sig_list, sig_list$gene %in% lrref)
+    sig_list <- subset(sig_list, sig_list$gene_name %in% lrref)
 } else {
-    ref = read.table(paste(REF_DIR, "approved_symbols.txt", sep='/'),header=T)[["Symbols"]]
+    ref = read.table(paste(REF_DIR, "approved_symbols.txt", sep='/'),header=F)[["V1"]]
     sig_list <- subset(sig_list, sig_list$gene_name %in% ref)
 }
 
@@ -161,88 +171,41 @@ if(num_mdls == 0 || any(dim(sig_list) == 0)){
     stop()
 }
 
+if(num_mdls > 20 ){
+    write("[IT001] Only first 20 modules/networks will be used.\n", stderr())
+    num_mdls = 20
+    modules = modules[1:20]
+}
+
 ## ----------------
 
-gene_datasets <- unlist(strsplit(x = args$options$datasets, split = '\\s+' ))
+gene_datasets <- args$options$datasets
 if(length(gene_datasets)>1){
     write("[IT001] Only first dataset selections will be used.\n", stderr())
 }
+
+ds_names = sapply(gene_datasets, function(x){x$short})
 gene_datasets = gene_datasets[[1]]
+ds_names = ds_names[[1]]
 
 ## =========== get the dataset ======================
 
-expFile <- paste0(gene_datasets, "_", "FPKM", ".txt")
-readEXPFile <- paste(FILE_DIR, FPKM_DIR, args$options$tumor_type, expFile, sep='/')
-if(!file.exists(readEXPFile)){
-    write("[IT002] No genomics data for the chosen Dataset/Tumor Type\n",
-        stderr())
-    stop()
-}
-fpkm <- data.table::fread(readEXPFile, sep="\t", stringsAsFactors = FALSE)
-colnames(fpkm)[2] <- "symbol"
+fpkm <- load_exp(gene_datasets["dataset"], gene_datasets$tumor_type, FILE_DIR, FPKM_DIR)
 
-if(toupper(args$options$survival) == "OVERALL"){
-    osFile <- paste0(gene_datasets, "_", "clinical_OS", ".txt")
-    readOSFile <- paste(FILE_DIR, FPKM_DIR, args$options$tumor_type, osFile, sep='/')
-    if(!file.exists(readOSFile)){
-        write("[IT002] No clinical survival available for the chosen Dataset/Tumor Type\n",
-            stderr())
-        stop()
-    }
-    outcome <-  read.table(readOSFile, header=T, sep="\t")
-    colnames(outcome)[2] <- "sample"
-
-    samples = subset(outcome, !is.na(outcome$Overall.Survival.Time.in.Days) & !is.na(outcome$Vital.Status))
-    samples = subset(samples, samples$Vital.Status == "Alive" | samples$Vital.Status == "Dead")
-    rownames(samples) <- samples$sample
-
-    if(length(unique(factor(samples$Vital.Status)))<2 || nrow(samples)<20){
-        write(paste0("[IT003] Not enough events for survival analysis in dataset", gene_datasets, "\n"),
-            stderr())
-        stop()
-    }
-
-} else {
-
-    osFile <- paste0(gene_datasets, "_", "clinical_OS", ".txt")
-    readOSFile <- paste(FILE_DIR, TARGET_DIR, osFile, sep='/')
-    if(!file.exists( readOSFile)){
-        write("[IT002] No clinical survival available for the chosen Dataset/Tumor Type\n",
-            stderr())
-        stop()
-    }
-
-    outcome <-  read.table(readOSFile, header=T, sep="\t")
-    colnames(outcome)[2] <- "sample"
-
-    samples = subset(outcome, !is.na(outcome$Event.Free.Survival.Time.in.Days) & !is.na(outcome$First.Event))
-    samples$First.Event <- as.character(samples$First.Event)
-    samples$Event.Status = "Event"
-    samples$Event.Status[samples$First.Event=="None" & samples$Vital.Status=="Alive"] <- "NoEvent"
-    samples$Event.Status[samples$First.Event=="Censored"  & samples$Vital.Status=="Alive"] <- "NoEvent"
-    rownames(samples) <- samples$sampleR
-
-    if(length(unique(factor(samples$Event.Status)))<2 || nrow(samples)<20){
-        write(paste0("[IT003] Not enough events for survival analysis in dataset", gene_datasets, "\n"),
-            stderr())
-        stop()
-    }
-
-}
-
-fpkm$symbol <- toupper(fpkm$symbol)
+samples <- load_clios(gene_datasets$surv_type, 
+    gene_datasets["dataset"], 
+    gene_datasets$tumor_type, 
+    FILE_DIR, FPKM_DIR, EFS_DIR)
 
 cases = intersect(names(fpkm),samples$sample)
-if (toupper(args$options$case_age_group) != "ALL") {
-    cases = intersect(cases,
-        filter_ages(gene_datasets,args$options$case_age_group))
+if (toupper(gene_datasets$age_grp) != "ALL") {
+    cases = intersect(cases, filter_ages_in_clios(samples,gene_datasets$age_grp))
     if (length(cases)<20) {
-        write(paste0("[IT003] Not enough ",args$options$case_age_group, " samples for survival analysis in dataset ", gene_datasets, "\n"),
+        write(paste0("[IT003] Not enough ",gene_datasets$age_grp, " samples for survival analysis in dataset ", gene_datasets[["short"]], "\n"),
                 stderr())
             stop()
     }
 }
-
 ## ===============  loop through each module===================
 
 
@@ -282,7 +245,7 @@ for(i in 1:num_mdls){ ## allow upto five datasets
     rownames(gx) <- symbol_order
 
     if(sum(gx)==0 || nrow(gx)==0){
-        write(paste0("[IT004] Gene not found or has no expression!", gene_datasets, "\n"),
+        write(paste0("[IT004] Gene not found or has no expression!", gene_datasets$short, "\n"),
             stderr())
         stop()
     }
@@ -298,75 +261,22 @@ for(i in 1:num_mdls){ ## allow upto five datasets
     }
 
     ##Get the cut-point for each disease GSVA score
-    if(tolower(args$options$group_method) == "cutp"){
-
-        #samples common to both clinical and immmune cell proportion
-        subset_tils_cli <- merge(samples, scores, by="row.names", sort=FALSE)
-        end <- grep("gx", colnames(subset_tils_cli))
-        f <- opt_cutp(subset_tils_cli, end, type=args$options$survival)
-
-        low_cpi <- signif(as.numeric(f),3)
-        high_cpi <- signif(as.numeric(f),3)
-
-        #identify samples within each low and high cut-points
-        los = rownames(scores)[scores <= low_cpi]
-        his = rownames(scores)[scores > high_cpi]
-        scores <- data.frame(rownames(scores),scores)
-        colnames(scores) <- c("sample","gx")
-        scores$group[scores$sample %in% los] = "Low"
-        scores$group[scores$sample %in% his] = "High"
-        #samples common to both clinical and immmune cell proportion
-        subset_tils_cli <- merge(samples, scores, by="sample", sort=FALSE)
-
-        cpi <- c(low_cpi, high_cpi)
-
-    } else if (tolower(args$options$group_method) == "percentile"){
-        f <- std_cutp(scores, "percentile", as.numeric(args$options$upper_per)/100, as.numeric(args$options$lower_per)/100)
-
-        low_cpi <- signif(as.numeric(f[[1]]),3)
-        high_cpi <- signif(as.numeric(f[[2]]),3)
-        # write(paste(c(low_cpi, high_cpi)), stderr())
-        #identify samples within each low and high cut-points
-        los = rownames(scores)[scores <= low_cpi]
-        his = rownames(scores)[scores > high_cpi]
-        scores <- data.frame(rownames(scores),scores)
-        colnames(scores) <- c("sample","gx")
-        scores$group[scores$sample %in% los] = "Low"
-        scores$group[scores$sample %in% his] = "High"
-        scores <- subset(scores, scores$group=="Low" | scores$group=="High")
-        #samples common to both clinical and immmune cell proportion
-        subset_tils_cli <- merge(samples, scores, by="sample", sort=FALSE)
-        # write(paste(dim(subset_tils_cli)), stderr())
-        cpi <- c(low_cpi, high_cpi)
-    } else {
-        # args$options$group_method %in% c("mean","median")
-        f <- std_cutp(scores, args$options$group_method, NA, NA)
-
-        low_cpi <- signif(as.numeric(f[[1]]),3)
-        high_cpi <- signif(as.numeric(f[[1]]),3)
-
-        #identify samples within each low and high cut-points
-        los = rownames(scores)[scores <= low_cpi]
-        his = rownames(scores)[scores > high_cpi]
-        scores <- data.frame(rownames(scores),scores)
-        colnames(scores) <- c("sample","gx")
-        scores$group[scores$sample %in% los] = "Low"
-        scores$group[scores$sample %in% his] = "High"
-        #samples common to both clinical and immmune cell proportion
-        subset_tils_cli <- merge(samples, scores, by="sample", sort=FALSE)
-
-        cpi <- c(low_cpi, high_cpi)
-    }
+    scores <- data.frame(rownames(scores),scores)
+    colnames(scores) <- c("sample","gx")
+    res <- sep_groups(args$options$group_method, samples, scores,
+        args$options$upper_per, args$options$lower_per, gene_datasets$surv_type)
+    subset_tils_cli = res[["subset_tils_cli"]]
+    cpi = res[["cpi"]]
 
     cutp_vec[i] <- cpi
     
 
-    if(toupper(args$options$survival) =="OVERALL"){
-        subset_tils_cli$Overall.Survival.Time.in.Months = (subset_tils_cli$Overall.Survival.Time.in.Days)/30.42
-        subset_tils_cli$os = Surv(time=subset_tils_cli$Overall.Survival.Time.in.Months, event=subset_tils_cli$Vital.Status=="Dead")
+    if(toupper(gene_datasets$surv_type) =="OVERALL"){
+        subset_tils_cli$overall_survival_time_in_months = (subset_tils_cli$overall_survival_time_in_days)/30.42
+        subset_tils_cli$os = Surv(time=subset_tils_cli$overall_survival_time_in_months, event=subset_tils_cli$vital_status=="Dead")
     } else {
-        subset_tils_cli$Event.Free.Survival.Time.in.Months = (subset_tils_cli$Event.Free.Survival.Time.in.Days)/30.42
-        subset_tils_cli$os = Surv(time=subset_tils_cli$Event.Free.Survival.Time.in.Months, event=subset_tils_cli$Event.Status=="Event")
+        subset_tils_cli$event_free_survival_time_in_months = (subset_tils_cli$event_free_survival_time_in_days)/30.42
+        subset_tils_cli$os = Surv(time=subset_tils_cli$event_free_survival_time_in_months, event=subset_tils_cli$event_status=="Event")
     }
 
     #make low expression as the reference level
@@ -392,7 +302,7 @@ for(i in 1:num_mdls){ ## allow upto five datasets
     HR <- paste0(HR.ratio, " (",
                     HR.confint.lower, "-", HR.confint.upper, ")")
 
-    res <-c(as.character(modules[i]), HR.ratio, HR.confint.lower, HR.confint.upper, nlow, nhigh, HR, hrpval, paste0(low_cpi,",", high_cpi), lr_pval)
+    res <-c(as.character(modules[i]), HR.ratio, HR.confint.lower, HR.confint.upper, nlow, nhigh, HR, hrpval, paste0(unique(cpi),collapse=','), lr_pval)
     cox.tbl[2+i,] <- res
     rownames(cox.tbl)[2+i] <- as.character(modules[i])
 
@@ -417,20 +327,15 @@ suppressPackageStartupMessages(library("stringr"))
 #   plotly:::to_JSON(plotly::plotly_build(p), ...)
 # }
 
-plotly2json <- function(p, even_safer = T) {
-    plotly:::plotly_json(plotly::plotly_build(p)$x[c("data","layout","config")], F, F) |>
-    str_replace_all(fixed('transparent'), '#ffffff') |>
-    str_replace_all(fixed(',"frame":null'), '') |>
-    str_replace_all(fixed('"family":"",'), '') |>
-    str_replace_all(fixed(',"linetype":[]'), '') |>
-    str_replace_all(fixed(',"linetype":'), ',"dash":')
-}
+source(paste(SCRIPT_PATH,"utils.R",sep="/"))
 
 
 
 source(paste(SCRIPT_PATH,"waterfallplot.R",sep="/"))
 source(paste(SCRIPT_PATH,"generate_boxplot.R",sep="/"))
+source(paste(SCRIPT_PATH,"corr_w_tils.R",sep="/"))
 source(paste(SCRIPT_PATH,"palattes.R",sep="/")) # COL_GROUPS, cbPalette
+source(paste(SCRIPT_PATH,"hrplot.R",sep="/"))
 
 figures <- vector("list",length=num_mdls+4)
 names(figures) <- c(modules,"analysis_type","hrplot", "forestplot","signature_corr")
@@ -441,11 +346,12 @@ for (mdl in modules){
     ds_figure = vector("list",length=4)
     names(ds_figure) = c("boxplot","waterfall","kmplot")
 
-    ds_figure[["waterfall"]] = (waterfallplot(scores_df[[mdl]],mdl,"Enrichment Score",COL_GROUPS) + theme_classic()) |> plotly2json()
+    ds_figure[["waterfall"]] = (waterfallplot(scores_df[[mdl]],mdl,"Enrichment Score",COL_GROUPS) + theme_classic())  |> plotly::ggplotly(tooltip = "text") |> plotly2json()
     ds_figure[["boxplot"]] = (generate_boxplot_gg(scores_df[[mdl]],mdl,label="Enrichment Score",COL_GROUPS) + theme_classic()) |> plotly2json()
 
     ## -------------- km-plot --------------
     kmplot <- survminer::ggsurvplot(km_models[[mdl]],
+        data=input_df[[mdl]],
         palette= unname(COL_GROUPS),
         xlab = "Time in Months", 
         ylab = "Survival Probability",
@@ -460,133 +366,42 @@ for (mdl in modules){
 
 
 # -------------- corr with signature sets --------------
-corr_score_df <- vector("list",length=length(modules))
-names(corr_score_df) = modules
-for (mdl in modules){
-    gx_scores <- scores_df[[mdl]][,c("sample", "gx")]
-    colnames(gx_scores) <- c("sample", mdl)
-    corr_score_df[[mdl]] = gx_scores
-}
-corr_score_df <- Reduce(function(dtf1, dtf2) merge(dtf1, dtf2, by = "sample", all.x = TRUE),corr_score_df)
-iccFile <- paste0("cibersoft_results_", gene_datasets, "_", args$options$tils, ".txt")
-readICCFile <- paste(FILE_DIR, ICC_DIR, args$options$tumor_type, iccFile, sep='/')
-if(!file.exists(readICCFile)){
-    write("[IT002] No cell proportions estimated for the chosen Dataset/Tumor Type\n",
-        stderr())
-    stop()
-} 
-icc <- read.table(readICCFile, sep="\t", row.names=1)
-icc$sample <- rownames(icc)
+
 suppressWarnings({
-#subset samples by CIBERSOFT p-value <=0.05
-    if(args$options$tils_pval == "True"){
-        icc_sig <- subset(icc, icc$P.value<=0.05)
-    } else {
-        icc_sig <- icc
+
+    corr_score_df <- vector("list",length=length(modules))
+    names(corr_score_df) = modules
+    for (mdl in modules){
+        gx_scores <- scores_df[[mdl]][,c("sample", "gx")]
+        colnames(gx_scores) <- c("sample", mdl)
+        corr_score_df[[mdl]] = gx_scores
     }
+    corr_score_df <- Reduce(function(dtf1, dtf2) merge(dtf1, dtf2, by = "sample", all.x = TRUE),corr_score_df)
+    cp <- corr_tils_coll(corr_score_df, gene_datasets$dataset, num_mdls,
+                args$options$tils_pval,
+                args$options$tils, 
+                gene_datasets$tumor_type,
+                FILE_DIR, ICC_DIR)
 
-    if(args$options$tils == "LM22"){
-        end = 22+1
-    } else {
-        end = 6+1
-    }
-    
-    icc_sig_subset <- merge(icc_sig, corr_score_df, by="sample", sort=FALSE)
-    
-    x <- as.matrix(icc_sig_subset[,c((end+4):ncol(icc_sig_subset))]) #GX
-    y <- as.matrix(icc_sig_subset[,c(2:end)]) #cell prop
-    cor.coef <- cor(x, y)
-    cor.coef[is.na(cor.coef)] <- 0
-    
-    icc_sig_subset <- cbind(x, y) #combined matrix for p-value
-    p.coef <- corrplot::cor.mtest(icc_sig_subset)
-    p.coef_p <- p.coef$p[1:num_mdls,-c(1:num_mdls)]
-    p.coef_p[is.na(p.coef_p)] <- 1
-    colnames(p.coef_p) <- colnames(cor.coef)
-    rownames(p.coef_p) <- rownames(cor.coef)
-
-    dm_coef <- melt(cor.coef)
-    colnames(dm_coef)[3] <- "value"
-    dm_coef_p <- melt(p.coef_p)
-    colnames(dm_coef_p)[3] <- "pvalue"
-    
-    dm <- merge(dm_coef, dm_coef_p, by=c("Var1", "Var2"))
-    colnames(dm)[1] <- "variable"
-    colnames(dm)[2] <- "cell"
-    
-    dm$shape <- "1"
-    dm$shape[dm$pvalue<=0.05] = "22"
-    
-    dm$size = 1
-    dm$size[dm$pvalue<=0.05] = 1.4
-
-    cellorder <- dm |> dplyr::group_by(cell) |> dplyr::summarize(sigcount = sum(pvalue<=0.05), meanp= mean(pvalue)) |> dplyr::arrange(sigcount,desc(meanp)) |> dplyr::pull(cell)
-    dm$cell <- factor(dm$cell,levels = cellorder)
-    dm <- dm |>
-        dplyr::arrange(cell) |>
-        dplyr::mutate(text = paste0("Cell Type: ", cell, "\n",
-                                "Correlation: ", value, "\n",
-                                "P-value: ", pvalue))
-    
-    cp <- ggplot(dm, aes(x=cell, y=reorder(variable,pvalue), text=text, fill=value, color=value)) +
-        geom_point(aes(shape=factor(shape)), size=6, show.legend = TRUE) +
-        scale_colour_gradient2(name = paste0("Correlation-", "\n", "coefficient"),
-                            low=COL_GROUPS["Low"], high=COL_GROUPS["High"],
-                            mid="grey", midpoint = 0,
-                            guide = 'legend') +
-        guides(color = guide_colorbar(reverse=FALSE)) + 
-        scale_fill_gradient2(name = paste0("Correlation-", "\n", "coefficient"),
-                            low=COL_GROUPS["Low"], high=COL_GROUPS["High"],
-                            mid="grey", midpoint = 0,
-                            guide = 'legend') +
-        guides(fill=guide_colorbar(reverse=FALSE)) +  
-        scale_shape_manual(name = 'P-value',
-                        values = c(1,22),
-                        breaks = c("1","22"),
-                        labels = c('<=0.05','>0.05'),
-                        guide = 'legend') +
-        ylab("") + xlab("") + coord_flip() + theme_classic()
-        # 
-    # pdf("./tmp.pdf");cp;dev.off()
 }) #supressWarnings
     # + theme(plot.margin = unit(c(2,10,2,12),"pt"))
-figures[["signature_corr"]] = cp |> plotly2json()
+figures[["signature_corr"]] = cp |> plotly::ggplotly(tooltip = "text") |> plotly2json()
 
 # ----------------- hr_plot -------------------
 suppressWarnings({
-dfp <- cox.tbl[-c(1:2),c(1,2,7,8)]
-x_vec <- as.vector(dfp$HR_Ratio)
-y_vec <- as.vector(dfp$HR_Pvalue)
-x_vec <- as.numeric(x_vec)
-y_vec <- as.numeric(y_vec)
-
-dfp$x_vec <- x_vec
-dfp$y_vec <- y_vec
-
-dfp$sig <- "p>0.05"
-dfp$sig[dfp$y_vec<=0.05 & dfp$x_vec>1.0]="Adv"
-dfp$sig[dfp$y_vec<=0.05 & dfp$x_vec<=1.0]="Fav"
-dfp$y_vec <- -log(dfp$y_vec,10)
-dfp$HR = paste0(dfp$Dataset, "\n", dfp$HR, "\n", "p=", dfp$HR_Pvalue)
-bp <- ggplot(data=dfp,  aes(x=x_vec, y=y_vec, colour=factor(sig), text=HR)) + 
-    geom_point(size=2) + 
-    scale_color_manual(values=c("Adv"=COL_GROUPS[["High"]],  "Fav"=COL_GROUPS[["Low"]], "p>0.05"="grey"), name = "") +
-    geom_text(aes(label=Dataset),hjust=0, vjust=0, size = 4, fontface="bold", show.legend = FALSE) + 
-    theme_classic() + 
-    ylab("-Log10(HR P-value)") + 
-    xlab("HR Ratio") + 
-    xlim(0, max(x_vec)+1.0) + 
-    guides(fill=guide_legend(title="")) + 
-    geom_vline(xintercept = 1, color="grey40", lty=4) + 
-    geom_hline(yintercept = 1.30103, color="grey40", lty=3)
+    bp <- plot_hazard_ratio(cox.tbl, COL_GROUPS)
 }) #supressWarnings
-figures[["hrplot"]] <- bp |> plotly2json()
+figures[["hrplot"]] <- bp |> plotly::ggplotly(tooltip = "text") |> plotly2json()
 
 
 ## -------------------- forest plot ---------------------
 
 figures[["forestplot"]] <- cox.tbl |> jsonlite::toJSON()
 
+
+## ------------- json for data -----------------
+merged_df <- merge_df(input_df, args$options$analysis_type)
+figures$dfJSON = merged_df |> jsonlite::toJSON()
 
 figures |> jsonlite::toJSON() |> write(paste0(args$options$out_dir,'/',args$options$session_id,"_visualization.json"))
 

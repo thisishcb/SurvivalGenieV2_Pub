@@ -11,7 +11,7 @@ import re
 import json
 # from time import sleep
 import subprocess
-from utils import CUTP_KEYS, SURVIVAL_TYPE_KEYS, TIL_SET_KEYS, BS_COLORS, GENE_SYMBOLS, TUMOR_TYPE_KEYS, BUILTIN_GENE_SET, id_factory, LNC_SYMBOLS, TF_SYMBOLS, LR_SYMBOLS
+from utils import CUTP_KEYS, SURVIVAL_TYPE_KEYS, TIL_SET_KEYS, BS_COLORS, GENE_SYMBOLS, TUMOR_TYPE_KEYS, BUILTIN_GENE_SET, id_factory, LNC_SYMBOLS, TF_SYMBOLS, LR_SYMBOLS, CASE_AGE_GROUP_KEYS, ds2str
 from configs import URL_BASE, TMP_OUTPUT_PATH, SCRIPT_PATH
 from pages.shared_components import open_help, review_card_content, collapse_callback
 from .input_common import ds_validation, input_tab_select_dataset, input_survival_tab, input_pagecard, ds_survival_callbacks, parse_geneset, add_or_update_record
@@ -38,7 +38,7 @@ geneset_tab = dbc.Card(
         [
             html.P(["Please Select/Enter the gene set of interest.",
                     html.Br(),
-                    html.Small(["The GeneSet Variation ", html.A("(GSVA) ", href="https://doi.org/10.1186/1471-2105-14-7", target="_blank"), "Score will be used for the analysis. Please select the built-in gene set of ineterest or use the Valid Gene Symbols as input, e.g. TP53, EGFR."])
+                    html.Small(["The Gene Set Variation Analysis", html.A("(GSVA) ", href="https://doi.org/10.1186/1471-2105-14-7", target="_blank"), " enrichment scores will be used for the analysis. Please select the built-in gene set of ineterest or use the Valid Gene Symbols as input, e.g. TP53, EGFR."])
                     ], className="card-text"),
             
             html.Br(),
@@ -51,6 +51,8 @@ geneset_tab = dbc.Card(
                             id=pgid("sel-builtin-gnset"),
                             data=[{"label": "Use My Own Gene Set" , "value": "userinput"}] + [{"label": key , "value": key} for key in BUILTIN_GENE_SET],
                             style={"width": 400},
+                            value="userinput",
+                            persistence=True, persistence_type="session",
                             ),
                     dmc.ActionIcon(DashIconify(icon="ep:question-filled", width=30,height=30, color="secondary"),  id=pgid("geneset-help"), n_clicks=0),
                     ],
@@ -66,11 +68,12 @@ geneset_tab = dbc.Card(
                     className="mb-3",
                     placeholder="The Genes in the Gene Set, where each gene is separated by new line, tab, space, or comma",
                     id=pgid("genes_in_sets"),
+                    persistence=True, persistence_type="session",
                 ),
                 dbc.FormText(id=pgid("gene-set-warning"), color='danger'),
                 dbc.Toast(
                     [
-                        "The gene symbols in the selected gene set will be displayed below. For providing your own geneset, please enter the official gene symbol for your genes of interest. The patient cohort of interest (selected under the 'Datasets for analysis tab') will be partioned into high and low expression groups by their GSVA values (based on the analysis parameters under 'Survival options') to predict outcomes correlated to the log ratio of the expression of selected genes. ",
+                        "The gene symbols of the selected genes will be displayed in the Review tab. For providing your own geneset, please enter the official gene symbols corresponding to your genes of interest. The dataset of interest (selected under the 'Select Dataset(s)') will be partioned into high and low expression groups according to their GSVA enrichment scores. This partitioning is determined using the cutpoint defined under the 'Analysis Settings' tab, enabling survival outcome analysis in relation to signaling activity. ",
                         html.A("Please refer to the HGNC for official gene symbols.", href="https://www.genenames.org/", target="_blank")
                     ],
                     id=pgid("geneset-help-toast"), header="Help on gene set input", icon="warning", is_open=False, duration=20000, dismissable=True, style={"position": "static", "margin-bottom": "15px", "width": "auto"},
@@ -96,7 +99,8 @@ geneset_tab = dbc.Card(
                                             {"label": "TF only", "value": 'tf'},
                                             {"label": "LR only", "value": 'lr'},
                                             ],
-                                        value='all'
+                                        value='all',
+                                        persistence=True, persistence_type="session",
                                     ),
                             className="radio-group",
                             ),
@@ -116,9 +120,9 @@ geneset_tab = dbc.Card(
 
 INPUTS = dbc.Tabs(
     [
-        dbc.Tab(geneset_tab, label="Gene of interest", tab_id="geneset-tab"),
-        dbc.Tab(input_tab_select_dataset(pgid), label="Dataset for analysis", tab_id="dataset-tab"),
-        dbc.Tab(input_survival_tab(pgid), label="Survival options", tab_id="survival-tab"),
+        dbc.Tab(geneset_tab, label="Input Genes", tab_id="geneset-tab"),
+        dbc.Tab(input_tab_select_dataset(pgid), label="Select Dataset(s)", tab_id="dataset-tab"),
+        dbc.Tab(input_survival_tab(pgid), label="Analysis Settings", tab_id="survival-tab"),
     ],
     id=pgid("input-tabs"),
     active_tab="geneset-tab",
@@ -222,19 +226,19 @@ def sel_geneset(genes_str, genes_filter, geneset):
     genesvalid, genesinvalid = [], []
     if genes_filter == "lnc":
         for g in genes:
-            (genesinvalid, genesvalid)[g in LNC_SYMBOLS].append(g)
+            (genesinvalid, genesvalid)[g.upper() in LNC_SYMBOLS].append(g)
     elif genes_filter == "tf":
         for g in genes:
-            (genesinvalid, genesvalid)[g in TF_SYMBOLS].append(g)
+            (genesinvalid, genesvalid)[g.upper() in TF_SYMBOLS].append(g)
     elif genes_filter == "lr":
         for g in genes:
-            (genesinvalid, genesvalid)[g in LR_SYMBOLS].append(g)
+            (genesinvalid, genesvalid)[g.upper() in LR_SYMBOLS].append(g)
     else:
         for g in genes:
-            (genesinvalid, genesvalid)[g in GENE_SYMBOLS].append(g)
+            (genesinvalid, genesvalid)[g.upper() in GENE_SYMBOLS].append(g)
     warntext = ''
     if len(genesvalid)==0:
-        warntext = "No gene symbol pass the filter."
+        warntext = "No gene symbol passed the filter."
     elif len(genesinvalid)>0:
         warntext = 'Unsupported Gene Symbols Removed: '+', '.join(genesinvalid)+'. ' if len(genesinvalid)>0 else ''
     return False, True, warntext, '\t'.join(genesvalid), "userinput"
@@ -242,9 +246,10 @@ def sel_geneset(genes_str, genes_filter, geneset):
 @callback(
     Output(pgid("btn-analyze"), "disabled"),
     Input(pgid("genes_in_sets"), "valid"),
-    Input(pgid("dataset-datatable"), "selected_row_ids")
+    Input(pgid('selected-datasets'), "data"),
+    Input(pgid("btn-review"), "n_clicks"),
 )
-def analyze_disabled(gs_valid, datasets):
+def analyze_disabled(gs_valid, datasets, _):
     return (not gs_valid) or (len(datasets)<=0)
 
 @callback(
@@ -258,7 +263,7 @@ def review_gene_input(genes_str,geneset):
     if not genes_str:
         return "Please Provide Gene Set of Interest", None
     
-    genes = genes_str.split()
+    genes = parse_geneset(genes_str)
     genesprint = f"Gene Set: {geneset} " if geneset!= "userinput" else "Customized Gene Set. "
     genesprint = [genesprint, DashIconify(icon="ion:caret-down", width=20,height=20, color="light")]
     return genesprint, ", ".join(genes)
@@ -268,77 +273,94 @@ collapse_callback(pgid("review-genes"),prevent_initial_call=True)
 ds_survival_callbacks(pgid)
 
 
-@app.long_callback(
+@callback(
     [Output("storesession","data",allow_duplicate=True),
-     Output(pgid("loading-res"), "children"),
+     Output("hidden-div-for-redirect-callback", "children",allow_duplicate=True),
      Output(pgid('error-msg'), 'displayed'),
      Output(pgid('error-msg'), 'message'),],
     [Input(pgid("btn-analyze"),"n_clicks")],
     [State(pgid("genes_in_sets"), "value"),
      State(pgid("sel-builtin-gnset"), "value"),
-     State(pgid("dataset-datatable"), "selected_row_ids"),
-     State(pgid("tumor-type"), "value"),
-     State(pgid("age-group"), "value"),
+     State(pgid('selected-datasets'), "data"),
      State(pgid("cutp"), "value"),
      State(pgid("percentile-slider"),"value"),
-     State(pgid("outcomes"), "value"),
      State(pgid("sg-til-set"), "value"),
      State(pgid("btn-lm-filter"),"on"),
-     State("session-id","data")],
-    prevent_initial_call=True
+     State("session-id","data"),
+     State(pgid('error-msg'), 'submit_n_clicks')],
+    prevent_initial_call=True,
+    background=True,
+    running=[
+        (Output(pgid("loading-res"), "display"), "show", "hide"),
+        (Output(pgid("btn-analyze"), "disabled"), True, no_update)
+            ]
 )
-def submit_analyze(nclicks, genes_in_gs, geneset, dataset, tumor_type, age_group, cutp, percentiles, outcomes, 
-                   til_set, til_filter, session_id):
+def submit_analyze(nclicks, genes_in_gs, geneset, dataset, cutp, percentiles, 
+                   til_set, til_filter, session_id, error_nclicks):
     if not nclicks:
         return no_update
     
     dataset = dataset if len(dataset)<6 else dataset[:5]
 
-    ds_invalid, msg = ds_validation(dataset, tumor_type, til_set, til_filter)
-    if ds_invalid:
-        return no_update, no_update, ds_invalid, msg
+    if error_nclicks < 1:
+        ds_invalid, msg = ds_validation(dataset, til_set, til_filter)
+        if ds_invalid:
+            return no_update, no_update, ds_invalid, msg
 
     analyze_params = {
+        "session_id":session_id,
         "analyze_type":"gene_set",
-        "gene_symbol": list(set(genes_in_gs.split())),
+        "gene_symbol": list(set(parse_geneset(genes_in_gs))),
         "gene_set": geneset,
         "dataset":dataset,
-        "tumor_type":tumor_type,
         "cutp_method": cutp,
         "percentiles": percentiles,
-        "survival_type": outcomes,
-        "case_age_group":age_group,
         "til_set": til_set,
         "til_fil": til_filter,
     }
-    
+    res_file = os.path.join(f"{TMP_OUTPUT_PATH}/{session_id}_visualization.json")
+    dataset4r = [dict(
+            project = ds["project"],
+            dataset = ds["dataset"],
+            short = ds2str(ds,sep='_'),
+            surv_type = SURVIVAL_TYPE_KEYS[ds["surv_type"]].val,
+            tumor_type = TUMOR_TYPE_KEYS[ds["tumor_type"]].val,
+            age_grp = CASE_AGE_GROUP_KEYS[ds["age_grp"]].val
+        ) for ds in dataset]
+    rparams = dict( # retain the same structure as the R cmd line parser
+        options = dict(
+            session_id=session_id,
+            analysis_type="gene_set",
+            genes=parse_geneset(genes_in_gs),
+            gene_set=geneset,
+            datasets=dataset4r,
+            tils=TIL_SET_KEYS[til_set],
+            tils_pval=til_filter,
+            group_method=CUTP_KEYS[cutp]["val"],
+            upper_per = max(percentiles),
+            lower_per = min(percentiles),
+            wd=SCRIPT_PATH,
+            out_dir=TMP_OUTPUT_PATH),
+        args = dict()
+        )
+
+    figdata = dict(params = analyze_params, rparams = rparams)
+
     cmds = ["Rscript",os.path.join(SCRIPT_PATH, "gene_set_analysis.R"),
-            "--session_id",session_id,
-            "-A",analyze_params["analyze_type"],
-            "--genes",' '.join(set(genes_in_gs.split())),
-            "--gene_set", geneset,
-            "--datasets", ' '.join(dataset),
-            "--tumor_type",TUMOR_TYPE_KEYS[tumor_type].val,
-            "-S",SURVIVAL_TYPE_KEYS[outcomes]["val"],
-            "--group_method",CUTP_KEYS[cutp]["val"],
-            "--upper_per", str(max(percentiles)),
-            "--lower_per", str(min(percentiles)),
-            "--case_age_group", age_group,
-            "--wd", SCRIPT_PATH,
-            "--out_dir", TMP_OUTPUT_PATH]
+            "--use_file", res_file,
+            "--session_id",session_id]
     msg=add_or_update_record(session_id, analyze_params["analyze_type"], 1)
     if msg:
         return dict(), no_update, True, msg
+    with open(res_file, 'wt') as f:
+        json.dump(figdata, f)
     app.logger.info(f"{session_id}-{analyze_params['analyze_type']}: start analysis")
-    subppp = subprocess.Popen(cmds, 
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE)
-    # print(' '.join(cmds))
-    _, res_err = subppp.communicate()
-    subppp.wait()
+    with subprocess.Popen(cmds, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as subppp:
+        # print(subprocess.list2cmdline(cmds))
+        _, res_err = subppp.communicate()
+        subppp.wait()
     res_err = res_err.decode()
     if "[SUCCESS] Pipeline Finished [SSECCUS]" in res_err:
-        res_file = os.path.join(TMP_OUTPUT_PATH, f"{session_id}_visualization.json")
         figdata = None
         try:
             with open(res_file, 'r') as f:

@@ -123,3 +123,19 @@ body:has(#_pages_content[data-dash-is-loading="true"]) #loading {
 html {
   overflow-y:scroll; 
 }
+
+td {
+  vertical-align: middle;
+}
+
+/* style table for all datasets */
+/* #all-dataset-table table,
+#all-dataset-table th,
+#all-dataset-table td {
+  border: 1px solid black;
+  border-collapse: collapse;
+} */
+
+/* #all-dataset-table tr.trProject {
+  cursor: pointer;
+} */

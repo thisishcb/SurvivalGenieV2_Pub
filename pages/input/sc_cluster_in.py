@@ -17,7 +17,7 @@ from dash_iconify import DashIconify
 from dash import dcc, html, callback, Input, Output, no_update, State, clientside_callback, Patch
 
 from configs import URL_BASE, TMP_OUTPUT_PATH, SCRIPT_PATH
-from utils import CUTP_KEYS, SURVIVAL_TYPE_KEYS, TIL_SET_KEYS, BS_COLORS, GENE_SYMBOLS, TUMOR_TYPE_KEYS, id_factory, GENE_FILTER_KEYS
+from utils import CUTP_KEYS, SURVIVAL_TYPE_KEYS, TIL_SET_KEYS, BS_COLORS, GENE_SYMBOLS, TUMOR_TYPE_KEYS, id_factory, GENE_FILTER_KEYS, CASE_AGE_GROUP_KEYS, ds2str
 from pages.shared_components import open_help, review_card_content
 from .input_common import ds_validation, input_tab_select_dataset, input_survival_tab, input_pagecard, ds_survival_callbacks, parse_file_N_save, add_or_update_record
 # from scripts.utils import user_info_validation
@@ -40,21 +40,29 @@ app = dash.get_app()
 
 example_data_table = [html.Thead(html.Tr([html.Th(""), html.Th("p_val_adj"), html.Th("cluster"), html.Th("gene"), html.Th("avg_logFC"), html.Th("...")])),
               html.Tbody([
-                  html.Tr([html.Td("IL32"), html.Td("0"), html.Td("T cells"), html.Td("IL32"), html.Td("1.689023137"), html.Td("...")]),
-                  html.Tr([html.Td("CD3E"), html.Td("0"), html.Td("T cells"), html.Td("CD3E"), html.Td("1.596225859"), html.Td("...")]),
+                  html.Tr([html.Td("IL32"), html.Td("0"), html.Td("T cells"), html.Td("IL32"), html.Td("1.68903"), html.Td("...")]), # 7313
+                  html.Tr([html.Td("CD3E"), html.Td("0"), html.Td("T cells"), html.Td("CD3E"), html.Td("1.59623"), html.Td("...")]), # 5859
                   html.Tr([html.Td("......",colSpan=6,)],style = {'text-align': 'center'}),
-                  html.Tr([html.Td("UBB"), html.Td("1.46E-06"), html.Td("T cells"), html.Td("UBB"), html.Td("-0.480071137"), html.Td("...")]),
-                  html.Tr([html.Td("S100A8.1"), html.Td("0"), html.Td("Mono/mac"), html.Td("S100A8"), html.Td("3.575487695"), html.Td("...")]),
+                  html.Tr([html.Td("UBB"), html.Td("1.46E-06"), html.Td("T cells"), html.Td("UBB"), html.Td("-0.48007"), html.Td("...")]), # 1137
+                  html.Tr([html.Td("S100A8.1"), html.Td("0"), html.Td("Mono/mac"), html.Td("S100A8"), html.Td("3.57548"), html.Td("...")]), # 7695
                   html.Tr([html.Td("......",colSpan=6)],style = {'text-align': 'center'}),
+                  html.Tr([html.Td(html.A("Example Data Link", href="http://bhasinlab.bmi.emory.edu/SurvivalGenie2/example_files/reducedheart0609.top10.markers.csv", target="_blank"),colSpan=6)],style = {'text-align': 'center'})
               ])]
 
 
 file_tab = dbc.Card(
     dbc.CardBody(
         [
-            html.P(["Please Select/Upload the cluster marker file of interest.",
+            html.P([html.B("Please Select/Upload the cluster marker file of interest."),
                     html.Br(),
-                    html.Small(["A cluster marker file will be required for this analysis. The GeneSet Variation ", html.A("(GSVA) ", href="https://doi.org/10.1186/1471-2105-14-7", target="_blank"), "Score (Enrichment Score, ES) of markers will be calculated per cluster and will be used to survival analysis. For this analysis, only one dataset will be used. ", html.B("More clusters and more markers will take longer running time. "),"Full example data see ", html.A("example_markers.csv",href="https://bhasinlab.bmi.emory.edu/scwizard/scw_out/1623434401_heart0609.top10.markers.csv")])
+                    html.Small(["This analysis will calculate the Gene Set Variation Analysis ", html.A("(GSVA) ", href="https://doi.org/10.1186/1471-2105-14-7", target="_blank"), " enrichment scores (ES) of marker genes in each cluster for the survival analysis per cluster. If you are unfamiliar with the upstream analysis required to generate this file, please refer to ", html.A("Seurat", href="https://satijalab.org/seurat/reference/findmarkers", target="_blank")," or ", html.A("scanpy", href="https://scanpy.readthedocs.io/en/stable/tutorials/basics/clustering.html#differentially-expressed-genes-as-markers", target="_blank") ," for instructions. Other cluster maker outputs are supported as long as the required columns are present. ", "For this analysis, only one dataset can be selected. ", ]),html.Br(),
+                    html.B("File Requirements:"),html.Br(),
+                    html.Small([
+                        html.B("Size: "), html.I("Maximum 10MB. "),
+                        html.B("Format: "), html.I(".csv"), ", ",html.I(".tsv")," , ", html.I(".txt"), " (comma/tab separated table file), or ", html.I(".xlsx"), " (single-sheet). ", 
+                        html.B("Structure: "), "Must contain two columns named:  ", html.I("cluster")," (module names) and ", html.I("gene"), "(official gene symbols), ", html.I("p_val_adj"), " (adjusted p-values). ", 
+                        html.B("Limits: "), "Maximum of 20 clusters, excess clusters will be ignored. Only markers with adjusted p-value < 0.05 will be used for analysis.", html.Br(),
+                        html.I("Note: Processing time increases with the number of clusters and genes. ")])
                     ], className="card-text"),
             
             html.Br(),
@@ -74,6 +82,7 @@ file_tab = dbc.Card(
                                     {"label": "Upload through URL", "value": 'URL'},
                                     ],
                                 value="example_data",
+                                # persistence=True, persistence_type="session",
                             ),
                     className="radio-group",
                     style={"overflow-x":"auto"}
@@ -83,6 +92,13 @@ file_tab = dbc.Card(
                     
                 #     className="input-group mb-3",
                 #     style={"margin-bottom": "15px", "overflow-x":"auto"},
+                ),
+                html.Br(),
+                dbc.Toast(
+                    [
+                        "Please provide the file of the marker genes, the gene names should be valid gene symbols. ", html.A("Please refer to the HGNC for official gene symbols. ", href="https://www.genenames.org/", target="_blank"), "The file should be in the format of .csv , .tsv , comma/tab separated .txt table file, or a single-sheet .xlsx file. Required columns are: " ,html.B("cluster")," for clusters; ", html.B("gene"), " for HGNC gene symbols, and ", html.B("p_val_adj"), " for adjusted p-value (FDR) (filter of <0.05 will be applied). Example is shown under the \"Use Example Marker File\" tab."
+                    ],
+                    id=pgid("sc-cluster-help-toast"), header="Help on cluster marker input", icon="warning", is_open=False, duration=20000, dismissable=True, style={"position": "static", "margin-bottom": "15px", "width": "auto"},
                 ),
                 html.Br(),
                 dbc.Table(
@@ -97,6 +113,7 @@ file_tab = dbc.Card(
                 dcc.Upload(
                     id=pgid('user-uploader'),
                     className='pty-uploader mb-3',
+                    max_size=10*1024*1024,  # 10MB
                     children=dmc.Stack( className='pty-contents',
                         children=[
                             html.A(DashIconify(icon="ph:upload-duotone",width=60,height=60),className='fas fa-upload fa-fw fa-3x upload-icon'),
@@ -120,13 +137,7 @@ file_tab = dbc.Card(
                     
             ]),
             html.Br(),
-            dbc.Toast(
-                [
-                    "Please provide the file of the marker genes, the gene names should be valid gene symbols. ", html.A("Please refer to the HGNC for official gene symbols. ", href="https://www.genenames.org/", target="_blank"), "The file should be in the format of .csv or .tsv or comma/tab separated .txt table file. Required columns are: " ,html.B("cluster")," for clusters; ", html.B("gene"), " for HGNC gene symbols, and ", html.B("p_val_adj"), " for adjusted p-value or FDR (filter of <0.05 will be applied). Example is shown under the \"Use Example Marker File\" tab."
-                ],
-                id=pgid("sc-cluster-help-toast"), header="Help on single gene input", icon="warning", is_open=False, duration=20000, dismissable=True, style={"position": "static", "margin-bottom": "15px", "width": "auto"},
-            ),
-            html.Div([ ## lnc/ligand receptor pair
+            html.Div([ 
                 html.H6("Gene Filter"),
                 html.P(["Select which genes will be used for the analysis. \"All\" by Default. Other available options are only long non-coding RNAs (Only lncRNAs), only ",html.A("Transcroptional factors",href="https://github.com/aertslab/pySCENIC/tree/master")," (Only TFs), and ",html.A("Ligand-Receptors",href="https://github.com/sqjin/CellChat")," (Only LRs). The input genes will be filtered when the analysis starts, genes not in the category will be removed for the analysis. Clusters which have no marker genes pass the filtering will be removed in the result."], className="card-text", style={"color":"gray", "font-size":"0.9rem"}),
                 dbc.Row(
@@ -145,7 +156,8 @@ file_tab = dbc.Card(
                                             {"label": "TF only", "value": 'tf'},
                                             {"label": "LR only", "value": 'lr'},
                                             ],
-                                        value='all'
+                                        value='all',
+                                        persistence=True, persistence_type="session",
                                     ),
                             className="radio-group",
                             ),
@@ -165,9 +177,9 @@ file_tab = dbc.Card(
 
 INPUTS = dbc.Tabs(
     [
-        dbc.Tab(file_tab, label="Gene of interest", tab_id="file-tab"),
-        dbc.Tab(input_tab_select_dataset(pgid), label="Dataset for analysis", tab_id="dataset-tab"),
-        dbc.Tab(input_survival_tab(pgid), label="Survival options", tab_id="survival-tab"),
+        dbc.Tab(file_tab, label="Input Genes", tab_id="file-tab"),
+        dbc.Tab(input_tab_select_dataset(pgid, max_dataset=1), label="Select Dataset(s)", tab_id="dataset-tab"),
+        dbc.Tab(input_survival_tab(pgid), label="Analysis Settings", tab_id="survival-tab"),
     ],
     id=pgid("input-tabs"),
     active_tab="file-tab",
@@ -278,10 +290,11 @@ def show_uploaded_fname(fname):
     [Input(pgid('user-uploader'),"filename"),
     Input(pgid('user-url'),"value"),
     Input(pgid("input-type"), "value"),
-    Input(pgid("dataset-datatable"), "selected_row_ids"),
-    Input(pgid("gene-filter"), "value")],
+    Input(pgid('selected-datasets'), "data"),
+    Input(pgid("gene-filter"), "value"),
+    Input(pgid("btn-review"), "n_clicks"),],
 )
-def analyze_disabled(upload_fname, url, input_type, datasets, gene_filter):
+def analyze_disabled(upload_fname, url, input_type, datasets, gene_filter, _):
     if input_type == "example_data":
         return (len(datasets)<=0), no_update, no_update, "Cluster Markers in Example Data. [{}]".format(GENE_FILTER_KEYS[gene_filter].verbose) 
     elif input_type == "URL": 
@@ -296,9 +309,9 @@ def analyze_disabled(upload_fname, url, input_type, datasets, gene_filter):
         return (not upload_fname) or (len(datasets)<=0),\
             no_update, no_update, msg
 
-@app.long_callback(
+@callback(
     [Output("storesession","data",allow_duplicate=True),
-     Output(pgid("loading-res"), "children"),
+     Output("hidden-div-for-redirect-callback", "children",allow_duplicate=True),
      Output(pgid('error-msg'), 'displayed'),
      Output(pgid('error-msg'), 'message'),],
     [Input(pgid("btn-analyze"),"n_clicks")],
@@ -307,36 +320,41 @@ def analyze_disabled(upload_fname, url, input_type, datasets, gene_filter):
      State(pgid('user-url'),"value"),
      State(pgid("input-type"), "value"),
      State(pgid("gene-filter"), "value"),
-     State(pgid("dataset-datatable"), "selected_row_ids"),
-     State(pgid("tumor-type"), "value"),
-     State(pgid("age-group"), "value"),
+     State(pgid('selected-datasets'), "data"),
      State(pgid("cutp"), "value"),
      State(pgid("percentile-slider"),"value"),
-     State(pgid("outcomes"), "value"),
      State(pgid("sg-til-set"), "value"),
      State(pgid("btn-lm-filter"),"on"),
-     State("session-id","data")],
-    prevent_initial_call=True
+     State("session-id","data"),
+     State(pgid('error-msg'), 'submit_n_clicks')],
+    prevent_initial_call=True,
+    background=True,
+    running=[
+        (Output(pgid("loading-res"), "display"), "show", "hide"),
+        (Output(pgid("btn-analyze"), "disabled"), True, no_update)
+            ]
 )
-def submit_analyze(nclicks, file_content, ori_fname, url, input_type, gene_filter, dataset, tumor_type, age_group, cutp, percentiles, outcomes, 
-                   til_set, til_filter, session_id):
+def submit_analyze(nclicks, file_content, ori_fname, url, input_type, gene_filter, dataset, cutp, percentiles,
+                   til_set, til_filter, session_id,error_nclicks):
     if not nclicks:
         return no_update
     
     dataset = dataset if len(dataset)<2 else dataset[:1]
 
-    ds_invalid, msg = ds_validation(dataset, tumor_type, til_set, til_filter)
-    if ds_invalid:
-        return no_update, no_update, ds_invalid, msg
-    
+    if error_nclicks < 1:
+        ds_invalid, msg = ds_validation(dataset, til_set, til_filter)
+        if ds_invalid:
+            return no_update, no_update, ds_invalid, msg
+
     ## parse file content
     # return the new file name
     
     # print(content_type)
+    new_fname=None
     if input_type == "user_upload":
         try:
             new_fname = os.path.join(TMP_OUTPUT_PATH, f"{session_id}_scrna_cluster_markers.csv")
-            msg = parse_file_N_save(file_content, new_fname, "cluster_marker")
+            msg = parse_file_N_save(file_content, ori_fname, new_fname, "cluster_marker")
             if msg:
                 return no_update, no_update, True, msg
         except:
@@ -348,45 +366,62 @@ def submit_analyze(nclicks, file_content, ori_fname, url, input_type, gene_filte
         "url": url,
         "file_name":ori_fname, 
         "dataset":dataset,
-        "tumor_type":tumor_type,
         "cutp_method": cutp,
         "percentiles": percentiles,
-        "survival_type": outcomes,
-        "case_age_group":age_group,
         "til_set": til_set,
         "til_fil": til_filter,
         "gene_filter": gene_filter
     }
+    res_file = os.path.join(f"{TMP_OUTPUT_PATH}/{session_id}_visualization.json")
+    dataset4r = [dict(
+            project = ds["project"],
+            dataset = ds["dataset"],
+            short = ds2str(ds,sep='_'),
+            surv_type = SURVIVAL_TYPE_KEYS[ds["surv_type"]].val,
+            tumor_type = TUMOR_TYPE_KEYS[ds["tumor_type"]].val,
+            age_grp = CASE_AGE_GROUP_KEYS[ds["age_grp"]].val
+        ) for ds in dataset]
+    rparams = dict( # retain the same structure as the R cmd line parser
+        options = dict(
+            session_id=session_id,
+            analysis_type="cluster_marker",
+            input_type=input_type,
+            data_path=new_fname if input_type == "user_upload" else url,
+            gene_filter=gene_filter,
+            datasets=dataset4r,
+            tils=TIL_SET_KEYS[til_set],
+            tils_pval=til_filter,
+            group_method=CUTP_KEYS[cutp]["val"],
+            upper_per = max(percentiles),
+            lower_per = min(percentiles),
+            wd=SCRIPT_PATH,
+            out_dir=TMP_OUTPUT_PATH),
+        args = dict()
+        )
     
+    figdata = dict(params = analyze_params, rparams = rparams)
+
     cmds = ["Rscript",os.path.join(SCRIPT_PATH, "scRNA_cluster_analysis.R"),
-            "--session_id", session_id,
-            "-A", analyze_params["analyze_type"],
-            "--input_type", input_type,
-            "--data_path", new_fname if input_type == "user_upload" else url,
-            "--gene_filter", gene_filter,
-            "--datasets", ' '.join(dataset),
-            "--tumor_type", TUMOR_TYPE_KEYS[tumor_type].val,
-            "-S", SURVIVAL_TYPE_KEYS[outcomes]["val"],
-            "--group_method", CUTP_KEYS[cutp]["val"],
-            "--upper_per", str(max(percentiles)),
-            "--lower_per", str(min(percentiles)),
-            "--case_age_group", age_group,
-            "--wd", SCRIPT_PATH,
-            "--out_dir", TMP_OUTPUT_PATH]
+            "--use_file", res_file,
+            "--session_id",session_id]
     msg=add_or_update_record(session_id, analyze_params["analyze_type"], 1)
     if msg:
         return dict(), no_update, True, msg
+    with open(res_file, 'wt') as f:
+        json.dump(figdata, f)
     app.logger.info(f"{session_id}-{analyze_params['analyze_type']}: start analysis")
-    subppp = subprocess.Popen(cmds, 
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE)
-    # print(' '.join(cmds))
-    _, res_err = subppp.communicate()
-    subppp.wait()
+    with subprocess.Popen(cmds, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as subppp:
+        # print(subprocess.list2cmdline(cmds))
+        _, res_err = subppp.communicate()
+        subppp.wait()
     res_err = res_err.decode()
     if "[SUCCESS] Pipeline Finished [SSECCUS]" in res_err:
-        res_file = os.path.join(TMP_OUTPUT_PATH, f"{session_id}_visualization.json")
         figdata = None
+        if (input_type == "user_upload") and (new_fname is not None):
+            try:
+                os.remove(new_fname)
+            except FileNotFoundError as e:
+                pass
         try:
             with open(res_file, 'r') as f:
                 figdata = json.load(f)

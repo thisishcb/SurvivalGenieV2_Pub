@@ -1,12 +1,15 @@
 from os import path
 import json
-import pandas as pd
+import re
+# import pandas as pd
 import plotly.graph_objects as go
+from dash import dcc, html
 # from math import ceil
 from numpy import float64
 from collections import defaultdict 
 from collections.abc import Iterable
 from configs import DATA_PATH
+from pygtrie import CharTrie
 """
 ## Miscellaneous Variables and Functions
 ### Variables:  
@@ -41,9 +44,15 @@ BS_COLORS = defaultdict(lambda: "UnKnown Type",{
 })
 
 class KeyVal:
-    def __init__(self,val,verbose) -> None:
-        self.verbose = verbose
+    def __init__(self,val,verbose=None, abbrev=None) -> None:
+        """
+        val: value for R;
+        verbose; 
+        abbrev: abbreviation; 
+        """
         self.val = val
+        self.verbose = verbose if verbose else val
+        self.abbrev = abbrev if abbrev else val
     def __str__(self) -> str:
         return str(self.verbose)
     def __getitem__(self, arg):
@@ -51,28 +60,40 @@ class KeyVal:
         return self.__dict__[arg]
 
 CUTP_KEYS = defaultdict(lambda: "UnKnown Method",{
-    1: KeyVal(verbose="Optimal cut point", val="cutp"),
-    2: KeyVal(verbose="Median", val="median"),
-    3: KeyVal(verbose="Percentile", val="percentile"),
-    4: KeyVal(verbose="Mean", val="mean")
+    '1': KeyVal(verbose="Optimal cut point", val="cutp"),
+    '2': KeyVal(verbose="Median", val="median"),
+    '3': KeyVal(verbose="Percentile", val="percentile"),
+    '4': KeyVal(verbose="Mean", val="mean")
 })
 
 TUMOR_TYPE_KEYS = defaultdict(lambda: "UnKnown Type",{
-    1: KeyVal(verbose="Primary", val="primary"),
-    2: KeyVal(verbose="Recurrent", val="recurrent"),
-    3: KeyVal(verbose="Metastatic", val="metastatic")
+    '1': KeyVal(verbose="[PR]Primary", val="primary", abbrev = "PR"),
+    '2': KeyVal(verbose="[RE]Recurrent", val="recurrent", abbrev="RE"),
+    '3': KeyVal(verbose="[ME]Metastatic", val="metastatic", abbrev="ME"),
+    '4': KeyVal(verbose="[NM]Normal", val="normal", abbrev="NM"),
+    '5': KeyVal(verbose="[OT]Other", val="other", abbrev="OT")
 })
 
 CASE_AGE_GROUP_KEYS = defaultdict(lambda: "ALL",{
-    "ALL": KeyVal(verbose="All Samples", val="ALL"),
-    "ADULT": KeyVal(verbose="Adult", val="ADULT"),
-    "PEDIATRIC": KeyVal(verbose="Pediatric", val="PEDIATRIC")
+    "ALL": KeyVal(verbose="[AS]All Samples", val="ALL", abbrev="AS"),
+    "ADULT": KeyVal(verbose="[AD]Adult", val="ADULT", abbrev="AD"),
+    "PEDIATRIC": KeyVal(verbose="[PD]Pediatric", val="PEDIATRIC", abbrev="PD")
 })
 
 SURVIVAL_TYPE_KEYS = defaultdict(lambda: "UnKnown Type",{
-    1: KeyVal(verbose="Overall survival", val="overall"),
-    2: KeyVal(verbose="Event-free survival", val="evemnt_free")
+    '1': KeyVal(verbose="[OVS]Overall survival", val="overall", abbrev="OVS"),
+    '2': KeyVal(verbose="[EFS]Event-free survival", val="event_free", abbrev="EFS")
 })
+
+def ds2str(ds:dict, sep=" | ", mode = "abbrev")->str:
+    if mode == "abbrev":
+        return sep.join([ds['dataset'], SURVIVAL_TYPE_KEYS[ds['surv_type']].abbrev, TUMOR_TYPE_KEYS[ds['tumor_type']].abbrev, CASE_AGE_GROUP_KEYS[ds['age_grp']].abbrev])
+    else:
+        if 'verbose' not in ds:
+            ds['verbose'] = ds['dataset']
+        tt_verbo = TUMOR_TYPE_KEYS[ds['tumor_type']].verbose
+        tt_verbo += f"[{ds['tm_type_note']}]" if ds["tm_type_note"] else ''
+        return [ds['dataset'], html.Br(), ds['verbose'], html.Br(), f"Survival Type: {SURVIVAL_TYPE_KEYS[ds['surv_type']].verbose}",html.Br(), f"Tumor Type: {tt_verbo}",html.Br(), f"Age Group: {CASE_AGE_GROUP_KEYS[ds['age_grp']].verbose}"]
 
 GENE_FILTER_KEYS = defaultdict(lambda: "UnKnown FIlter",{
     'all': KeyVal(verbose="All Genes", val="all"),
@@ -86,13 +107,22 @@ TIL_SET_KEYS = defaultdict(lambda: "UnKnown Set",{
     22: "LM22"
 })
 
-GENE_SYMBOLS = open(path.join(DATA_PATH,"approved_symbols.txt"),'r').read().splitlines()[1:]
-LNC_SYMBOLS = open(path.join(DATA_PATH,"approved_lncRNAs.txt"),'r').read().splitlines() # no symbol column name
-TF_SYMBOLS = open(path.join(DATA_PATH,"approved_tf.txt"),'r').read().splitlines()
-LR_SYMBOLS = open(path.join(DATA_PATH,"approved_lr.txt"),'r').read().splitlines()
+with open(path.join(DATA_PATH,"approved_symbols.txt"),'r') as f:
+    GENE_SYMBOLS = f.read().splitlines()
+with open(path.join(DATA_PATH,"approved_lncRNAs.txt"),'r') as f:
+    LNC_SYMBOLS = f.read().splitlines() # no symbol column name
+with open(path.join(DATA_PATH,"approved_tf.txt"),'r') as f:
+    TF_SYMBOLS = f.read().splitlines()
+with open(path.join(DATA_PATH,"approved_lr.txt"),'r') as f:
+    LR_SYMBOLS = f.read().splitlines()
+GENE_SYMBOLS = [i.upper() for i in GENE_SYMBOLS]
+LNC_SYMBOLS = [i.upper() for i in LNC_SYMBOLS]
+LR_SYMBOLS = [i.upper() for i in LR_SYMBOLS]
+TF_SYMBOLS = [i.upper() for i in TF_SYMBOLS]
 # 6 times faters than pd.read_csv; [1:] to omit the first row of "Symbol"
 
-PROJ_META = json.load(open(path.join(DATA_PATH,"projectmeta.json"),'r'))
+with open(path.join(DATA_PATH,"projectmeta.json"),'r') as f:
+    PROJ_META = json.load(f)
 
 PROJECTS = tuple(PROJ_META.keys())
 
@@ -114,13 +144,17 @@ for p in PROJECTS:
     for s in PROJ_META[p]["primary_site"]:
         SITE_2_PROJ[s].append(p)
 
+with open(path.join(DATA_PATH,"avail_datasets.json"),'r') as f:
+    DATASETS = json.load(f)
 
-DS_VALIDATION = defaultdict(lambda x: "Invalid Geneset",json.load(open(path.join(DATA_PATH,"dataset_validation.json"),'r')))
+with open(path.join(DATA_PATH,"dataset_validation.json"),'r') as f:
+    DS_VALIDATION = defaultdict(lambda x: "Invalid Geneset",json.load(f))
 
 # PROJ_QC_SUMMARY = pd.read_csv("/opt/megaseq-data/SurvivalGenie2_Dash/data/summary.txt",sep='\t')
 # ICC_QC_SUMMARY = pd.read_csv("/opt/megaseq-data/SurvivalGenie2_Dash/data/icc_summary.tsv",sep='\t')
 
-BUILTIN_GENE_SET = json.load(open(path.join(DATA_PATH,"genesets.json"),'r'))
+with open(path.join(DATA_PATH,"genesets.json"),'r') as f:
+    BUILTIN_GENE_SET = json.load(f)
 
 def id_factory(page: str):
     def func(_id: str):
@@ -157,3 +191,20 @@ def id_factory(page: str):
         """
         return f"{page}-{_id}"
     return func
+
+def make_valid_name(string):
+    """Converts a string to a valid Python variable name."""
+
+    # Replace invalid characters with underscores
+    string = re.sub(r'[^a-zA-Z0-9_-]', '_', string)
+
+    # If the string starts with a digit, prepend an underscore
+    if string[0].isdigit():
+        string = '_' + string
+
+    return string
+
+
+GENE_SYMBOLS_TREE = CharTrie()
+for gene in GENE_SYMBOLS:
+    GENE_SYMBOLS_TREE[gene] = gene

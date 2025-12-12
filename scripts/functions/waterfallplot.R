@@ -30,19 +30,27 @@ waterfallplot = function(x, selected, label,COL_GROUPS){
     # #select and modify the data for readability
     # read_data_sort <- x[ order(x$gx, decreasing=FALSE), ]
     #arrange the columns
-    arrange_read_data_sort <- x |> dplyr::select(sample, gx, group) |>
+    arrange_read_data_sort <- x |> dplyr::select(sample, submitter_id, gx, group) |>
       dplyr::mutate(Start=0) |> 
       dplyr::arrange(gx)
     
     # data.frame(read_data_sort$sample,read_data_sort$Start,read_data_sort$gx,read_data_sort$group)
-    colnames(arrange_read_data_sort)<-c("samples","End","type","Start")
+    colnames(arrange_read_data_sort)<-c("samples","PtId","End","type","Start")
     arrange_read_data_sort$type = factor(arrange_read_data_sort$type,levels = c("High","Low"))
     arrange_read_data_sort$samples <- factor(arrange_read_data_sort$samples,levels=unique(arrange_read_data_sort$samples))
     arrange_read_data_sort$id <- seq_along(arrange_read_data_sort$End)
     # arrange_read_data_sort$type <- arrange_read_data_sort$group#ifelse(arrange_read_data_sort$group=="High", "High", "Low")
     # arrange_read_data_sort <- arrange_read_data_sort[,c(5,1,6,2,3)]
     #generate the waterfall plot
-    wf <- ggplot(arrange_read_data_sort, aes(fill=type, color=type)) + 
+    if (grepl("\\(FPKM\\+1\\)",label)) {
+      tooltip_y_label = "log(FPKM+1)"
+    } else {
+      tooltip_y_label = label
+    }
+    
+    wf <- ggplot(arrange_read_data_sort, aes(fill=type, color=type, 
+        text=paste0("ID: ", PtId, "<br>Group: ", type, "<br>",tooltip_y_label,": ", round(End, 6)))) + 
+        # geom_bar(aes(x=id,y=End)) +
         geom_rect(aes(xmin=id-0.35,xmax=id+0.35,ymin=Start,ymax=End)) +
         scale_fill_manual(values=COL_GROUPS) +
         scale_colour_manual(values=COL_GROUPS) + 

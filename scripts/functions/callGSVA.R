@@ -29,7 +29,15 @@ callGSVA = function(x,y) {
     stop("[IT002] input gene set missing!")
     }
     genes <- list(set1=y)
-    gsva.results <- GSVA::gsva(x, genes, method="zscore",verbose=FALSE, parallel.sz=2)
+    gsva.results <- tryCatch(
+        {
+        GSVA::gsva(GSVA::zscoreParam(x, genes))
+        },
+        error = function(cond) {
+            res = GSVA::gsva(x, genes, method="zscore",verbose=FALSE, parallel.sz=2)
+            return(res) 
+        })
+    # gsva.results <- GSVA::gsva(GSVA::zscoreParam(x, genes))
     tr_gsva.results <- t(gsva.results)
     colnames(tr_gsva.results) <- c("GSVA_score")
     return (tr_gsva.results)

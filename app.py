@@ -1,37 +1,78 @@
-import json
 import uuid
 import dash
 # import dash_bootstrap_components as dbc
-from dash import html, dcc, callback, Input, Output, no_update, State
+from dash import html, dcc, callback, Input, Output, no_update, State, DiskcacheManager, CeleryManager
 # from flask import Flask, render_template, redirect, request
 # from flask_sqlalchemy import SQLAlchemy
+# import sys
+import os
+import logging
+from logging.handlers import RotatingFileHandler
 
-from dash.long_callback import DiskcacheLongCallbackManager
-import diskcache
-
+import dash_bootstrap_components as dbc
+from flask import send_from_directory #, abort
 # import base64
 from navbar import create_navbar
 from server import server, task_tb, db
 
-from configs import URL_BASE, SRV_HOST, SRV_PORT, TEST, CACHE_PATH
+from configs import URL_BASE, SRV_HOST, SRV_PORT, TEST, CACHE_PATH, REDIS_URL, DATA_PATH
 
-BOOTSTRAP_CSS = "assets/bootstrap.css"
-CUSTOM_CSS = "assets/custom_css.css"
+BOOTSTRAP_CSS = "https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" #"assets/bootstrap.css" # https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css
+# CUSTOM_CSS = "assets/custom_css.css"
+# CUSTOM_JS = "assets/custom-script.js"
 APP_TITLE = "SurvivalGenie2.0"
 
-cache = diskcache.Cache(CACHE_PATH)
-long_callback_manager = DiskcacheLongCallbackManager(cache)
+if not TEST:
+    # Use Redis & Celery if REDIS_URL set as an env variable
+    from celery import Celery
+    celery_app = Celery(__name__, broker=REDIS_URL, backend=REDIS_URL)
+    celery_app.conf.broker_connection_retry_on_startup = True 
+    background_callback_manager = CeleryManager(celery_app)
 
-app = dash.Dash(
-        __name__, 
+else:
+    # Diskcache for non-production apps when developing locally
+    import diskcache
+    cache = diskcache.Cache(CACHE_PATH)
+    background_callback_manager = DiskcacheManager(cache)
+
+external_srcs = dict(
+    stylesheets = [dbc.themes.BOOTSTRAP], #BOOTSTRAP_CSS
+    scripts = ['https://www.google.com/recaptcha/api.js?render=explicit', "https://cdn.jsdelivr.net/npm/bootstrap@5.3.6/dist/js/bootstrap.bundle.min.js", 'https://cdn.jsdelivr.net/npm/dom-to-image@2.6.0/dist/dom-to-image.min.js']
+)
+
+if TEST:
+    app = dash.Dash(
+            server=server,
+            external_stylesheets=external_srcs["stylesheets"], 
+            external_scripts = external_srcs["scripts"],
+            use_pages=True, 
+            url_base_pathname=URL_BASE, # url_base_pathname default to requests_pathname_prefix
+            # requests_pathname_prefix=URL_BASE,
+            title=APP_TITLE, 
+            suppress_callback_exceptions=True,# not TEST, # True for deploying
+            background_callback_manager=background_callback_manager,
+            meta_tags=[
+                {
+                    "name": "viewport",
+                    "content": "width=device-width, initial-scale=1.0",
+                }
+            ],
+        )
+
+    @server.route(f'{URL_BASE}example_files/<path:filename>')
+    def serve_my_static_files(filename):
+        return send_from_directory(os.path.join(DATA_PATH, "example_in"), filename, mimetype='text/plain')
+
+else:
+    app = dash.Dash(
         server=server,
-        external_stylesheets=[BOOTSTRAP_CSS, CUSTOM_CSS], 
+        external_stylesheets=external_srcs["stylesheets"], 
+        external_scripts = external_srcs["scripts"],
         use_pages=True, 
-        # url_base_pathname=URL_BASE, # url_base_pathname default to requests_pathname_prefix
         requests_pathname_prefix=URL_BASE,
         title=APP_TITLE, 
         suppress_callback_exceptions=True,# not TEST, # True for deploying
-        long_callback_manager=long_callback_manager,
+        background_callback_manager=background_callback_manager,
         meta_tags=[
             {
                 "name": "viewport",
@@ -40,14 +81,40 @@ app = dash.Dash(
         ],
     )
 
+    @server.route(f'/example_files/<path:filename>')
+    def serve_my_static_files(filename):
+        return send_from_directory(os.path.join(DATA_PATH, "example_in"), filename, mimetype='text/plain')
+
 # app.scripts.config.serve_locally = True
 # app.css.config.serve_locally = True
 
+# https://stackoverflow.com/questions/65274912/how-to-set-an-google-opt-out-cookie-for-google-analytics-4-not-universal-one
+# <a href="javascript:gaOptout()">Click here to opt-out of Google Analytics</a>
+
 # --- Google analytics --- #
-app.index_string = f'''
+app.index_string = f"""
 <!DOCTYPE html>
 <html>
     <head>
+        <!-- Google tag (gtag.js) -->
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-7F1JEPVWP8"></script>
+        <script>
+        var disableStr = 'ga-disable-G-7F1JEPVWP8';
+        if (document.cookie.indexOf(disableStr + '=true') > -1) {{
+            window['ga-disable-G-7F1JEPVWP8'] = true;
+        }}
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){{dataLayer.push(arguments);}}
+        gtag('js', new Date());
+
+        gtag('config', 'G-7F1JEPVWP8');
+
+        function gaOptout() {{
+        document.cookie = disableStr + '=true; expires=Thu, 31 Dec 2099 23:59:59 UTC; path=/';
+        window[disableStr] = true;
+        }}
+        </script>
+
         {{%metas%}}
         <title>{APP_TITLE}</title>
         {{%favicon%}}
@@ -63,7 +130,7 @@ app.index_string = f'''
         
     </body>
 </html>
-'''
+"""
 
 # --- Navbar --- #
 NAVBAR = create_navbar()
@@ -132,4 +199,8 @@ def re_dir(url,ssid):
 
 # --- Launch app --- #
 if __name__ == '__main__':
+    handler = RotatingFileHandler(os.path.join(CACHE_PATH,"SurvGenieV2Running.log"), maxBytes=10000, backupCount=1)
+    handler.setLevel(logging.INFO)
+    app.logger.addHandler(handler)
     app.run(host=SRV_HOST, port=SRV_PORT, debug=TEST)
+    # app.run(host='192.168.1.66', port='8020', debug=True)

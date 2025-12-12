@@ -16,7 +16,7 @@ from dash_iconify import DashIconify
 
 from dash import dcc, html, callback, Input, Output, no_update, State, clientside_callback, Patch
 
-from utils import CUTP_KEYS, SURVIVAL_TYPE_KEYS, TIL_SET_KEYS, BS_COLORS, GENE_SYMBOLS, TUMOR_TYPE_KEYS, GENE_FILTER_KEYS, id_factory
+from utils import CUTP_KEYS, SURVIVAL_TYPE_KEYS, TIL_SET_KEYS, BS_COLORS, GENE_SYMBOLS, TUMOR_TYPE_KEYS, GENE_FILTER_KEYS, id_factory, CASE_AGE_GROUP_KEYS, ds2str
 from configs import URL_BASE, TMP_OUTPUT_PATH, SCRIPT_PATH
 from pages.shared_components import open_help, review_card_content
 from .input_common import ds_validation, input_tab_select_dataset, input_survival_tab, input_pagecard, ds_survival_callbacks, parse_file_N_save, add_or_update_record
@@ -35,26 +35,36 @@ dash.register_page(
 )
 
 pgid = id_factory("wgcna-in")
+analysis_type = "wgcna_module"
 app = dash.get_app()
 # --- Components --- #
 
-example_data_table = [html.Thead(html.Tr([html.Th("gene_name"), html.Th("module"), html.Th("kME"), html.Th("...")])),
+example_data_table = [html.Thead(html.Tr([html.Th("gene_name"), html.Th("module"), html.Th("...")])), #, html.Th("kME (optional)")
               html.Tbody([
-                  html.Tr([html.Td("BMS1P14"), html.Td("Module-M1"), html.Td("0.387198017446564"), html.Td("...")]),
-                  html.Tr([html.Td("ANKRD30BL"), html.Td("Module-M1"), html.Td("0.380959424485226"), html.Td("...")]),
+                  html.Tr([html.Td("BMS1P14"), html.Td("Module-M1"), html.Td("...")]), #, html.Td("0.38720") 8017446564
+                  html.Tr([html.Td("ANKRD30BL"), html.Td("Module-M1"), html.Td("...")]), #, html.Td("0.38096") 9424485226
                   html.Tr([html.Td("......",colSpan=6,)],style = {'text-align': 'center'}),
-                  html.Tr([html.Td("ANKRD26"), html.Td("Module-M1"), html.Td("0.244592950464108"), html.Td("...")]),
-                  html.Tr([html.Td("WSB1"), html.Td("Module-M2"), html.Td("0.480447767044089"), html.Td("...")]),
+                  html.Tr([html.Td("ANKRD26"), html.Td("Module-M1"), html.Td("...")]), #, html.Td("0.24459") 2950464108
+                  html.Tr([html.Td("WSB1"), html.Td("Module-M2"), html.Td("...")]), #, html.Td("0.48045") 7767044089
                   html.Tr([html.Td("......",colSpan=6)],style = {'text-align': 'center'}),
+                #   html.Tr([html.Td(["Example Data from ", html.A("hdWGCNA", href="https://smorabit.github.io/hdWGCNA/")],colSpan=6)],style = {'text-align': 'center'}),
+                  html.Tr([html.Td([html.A("Example Data", href="http://bhasinlab.bmi.emory.edu/SurvivalGenie2/example_files/reduced_module_hub_genes.csv")],colSpan=6)],style = {'text-align': 'center'}),
               ])]
 
 
 file_tab = dbc.Card(
     dbc.CardBody(
         [
-            html.P(["Please Select/Upload the co-expression module file of interest.",
+            html.P([html.B("Please Select/Upload the co-expression module file of interest."),
                     html.Br(),
-                    html.Small(["A co-expression module file will be required for this analysis. The GeneSet Variation ", html.A("(GSVA) ", href="https://doi.org/10.1186/1471-2105-14-7", target="_blank"), "Score (Enrichment Score, ES) of eigene-genes will be calculated per module and will be used to survival analysis. For this analysis, only one dataset will be used. ", html.B("More module and more genes in modules will take longer running time. ")])
+                    html.Small(["This analysis will calculate the Gene Set Variation Analysis ", html.A("(GSVA) ", href="https://doi.org/10.1186/1471-2105-14-7", target="_blank"), " enrichment scores (ES) of eigen-genes in each co-expression module for the survival analysis per module. If you are unfamiliar with the upstream analysis required to generate this file, please refer to ", html.A("WGCNA", href="https://link.springer.com/article/10.1186/1471-2105-9-559", target="_blank"), " or ", html.A("hdWGCNA", href="https://smorabit.github.io/hdWGCNA/", target="_blank")," for instructions. We also provide wrapper function for hdWGCNA at ", html.A("github link", href="https://github.com/bhasin-lab/SurvivalGenieV2/blob/main/scripts/get_wgcna_result.R", target="_blank")," Other co-expression module files are supported as long as the required columns are present."," For this analysis, only one dataset can be selected. ", ]),html.Br(),
+                    html.B("File Requirements:"),html.Br(),
+                    html.Small([
+                        html.B("Size: "), html.I("Maximum 10MB. "),
+                        html.B("Format: "), html.I(".csv"), ", ",html.I(".tsv")," , ", html.I(".txt"), " (comma/tab separated table file), or ", html.I(".xlsx"), " (single-sheet). ", 
+                        html.B("Structure: "), "Must contain two columns named: ", html.I("module")," (module names) and ", html.I("gene_name"), "(official gene symbols). ", 
+                        html.B("Limits: "), "Maximum of 20 modules, excess modules will be ignored. ", html.Br(),
+                        html.I("Note: Processing time increases with the number of modules and genes. ")])
                     ], className="card-text"),
             
             html.Br(),
@@ -85,6 +95,13 @@ file_tab = dbc.Card(
                 #     style={"margin-bottom": "15px", "overflow-x":"auto"},
                 ),
                 html.Br(),
+                dbc.Toast(
+                    [
+                        "Please provide the file of the module eigen-egens, the gene names should be valid gene symbols. ", html.A("Please refer to the HGNC for official gene symbols. ", href="https://www.genenames.org/", target="_blank"), "The file should be in the format of .csv , .tsv , comma/tab separated .txt table file , or a single-sheet .xlsx file. Required columns are: " ,html.B("module")," for module names; ", html.B("gene_name"), " for HGNC gene names. Other columns will be ignored. Example is shown under the \"Use Example Marker File\" tab." # Optional column is ", html.B("kME"), " for kME score(eigengene-based connectivities). The eigen-genes will be ordered in descending order by kME value.
+                    ],
+                    id=pgid("sc-cluster-help-toast"), header="Help on module/network-based input", icon="warning", is_open=False, duration=20000, dismissable=True, style={"position": "static", "margin-bottom": "15px", "width": "auto"},
+                ),
+                html.Br(),
                 dbc.Table(
                     example_data_table, 
                     id=pgid("example-df"),
@@ -97,6 +114,7 @@ file_tab = dbc.Card(
                 dcc.Upload(
                     id=pgid('user-uploader'),
                     className='pty-uploader mb-3',
+                    max_size=10*1024*1024,  # 10MB
                     children=dmc.Stack( className='pty-contents',
                         children=[
                             html.A(DashIconify(icon="ph:upload-duotone",width=60,height=60),className='fas fa-upload fa-fw fa-3x upload-icon'),
@@ -120,12 +138,6 @@ file_tab = dbc.Card(
                     
             ]),
             html.Br(),
-            dbc.Toast(
-                [
-                    "Please provide the file of the module eigen-egens, the gene names should be valid gene symbols. ", html.A("Please refer to the HGNC for official gene symbols. ", href="https://www.genenames.org/", target="_blank"), "The file should be in the format of .csv or .tsv or comma/tab separated .txt table file. Required columns are: " ,html.B("module")," for module names; ", html.B("gene_name"), " for HGNC gene names, and ", html.B("kME"), " for kME score(eigengene-based connectivities) The eigenes-genes will be ordered in descending order by kME value. Example is shown under the \"Use Example Marker File\" tab."
-                ],
-                id=pgid("sc-cluster-help-toast"), header="Help on single gene input", icon="warning", is_open=False, duration=20000, dismissable=True, style={"position": "static", "margin-bottom": "15px", "width": "auto"},
-            ),
             html.Div([ ## lnc/ligand receptor pair
                 html.H6("Gene Filter"),
                 html.P(["Select which genes will be used for the analysis. \"All\" by Default. Other available options are only long non-coding RNAs (Only lncRNAs), only ",html.A("Transcroptional factors",href="https://github.com/aertslab/pySCENIC/tree/master")," (Only TFs), and ",html.A("Ligand-Receptors",href="https://github.com/sqjin/CellChat")," (Only LRs). The input genes will be filtered when the analysis starts, genes not in the category will be removed for the analysis. Clusters which have no marker genes pass the filtering will be removed in the result."], className="card-text", style={"color":"gray", "font-size":"0.9rem"}),
@@ -165,9 +177,9 @@ file_tab = dbc.Card(
 
 INPUTS = dbc.Tabs(
     [
-        dbc.Tab(file_tab, label="Gene of interest", tab_id="file-tab"),
-        dbc.Tab(input_tab_select_dataset(pgid), label="Dataset for analysis", tab_id="dataset-tab"),
-        dbc.Tab(input_survival_tab(pgid), label="Survival options", tab_id="survival-tab"),
+        dbc.Tab(file_tab, label="Input Genes", tab_id="file-tab"),
+        dbc.Tab(input_tab_select_dataset(pgid, max_dataset=1), label="Select Dataset(s)", tab_id="dataset-tab"),
+        dbc.Tab(input_survival_tab(pgid), label="Analysis Settings", tab_id="survival-tab"),
     ],
     id=pgid("input-tabs"),
     active_tab="file-tab",
@@ -176,7 +188,7 @@ INPUTS = dbc.Tabs(
 REVIEW = dbc.Card(
     dbc.CardBody([
         html.H5("Review selected options", style={"margin-top": "15px"}),
-        review_card_content(pgid, "wgcna_module"),
+        review_card_content(pgid, analysis_type),
         dbc.Row(
                 dbc.Col(dbc.Button("Analyze", id=pgid("btn-analyze"), color="warning", n_clicks=0, size="md", disabled=True), width="auto", style={"margin-top": "15px"}),#, href="/single_gene/result"
                 justify="end",
@@ -278,10 +290,11 @@ def show_uploaded_fname(fname):
     [Input(pgid('user-uploader'),"filename"),
     Input(pgid('user-url'),"value"),
     Input(pgid("input-type"), "value"),
-    Input(pgid("dataset-datatable"), "selected_row_ids"),
-    Input(pgid("gene-filter"), "value")],
+    Input(pgid('selected-datasets'), "data"),
+    Input(pgid("gene-filter"), "value"),
+    Input(pgid("btn-review"), "n_clicks"),],
 )
-def analyze_disabled(upload_fname, url, input_type, datasets, gene_filter):
+def analyze_disabled(upload_fname, url, input_type, datasets, gene_filter, _):
     if input_type == "example_data":
         return (len(datasets)<=0), no_update, no_update, "Example Modules. [{}]".format(GENE_FILTER_KEYS[gene_filter].verbose) 
     elif input_type == "URL": 
@@ -296,9 +309,9 @@ def analyze_disabled(upload_fname, url, input_type, datasets, gene_filter):
         return (not upload_fname) or (len(datasets)<=0),\
             no_update, no_update, msg
 
-@app.long_callback(
+@callback(
     [Output("storesession","data",allow_duplicate=True),
-     Output(pgid("loading-res"), "children"),
+     Output("hidden-div-for-redirect-callback", "children",allow_duplicate=True),
      Output(pgid('error-msg'), 'displayed'),
      Output(pgid('error-msg'), 'message'),],
     [Input(pgid("btn-analyze"),"n_clicks")],
@@ -307,86 +320,108 @@ def analyze_disabled(upload_fname, url, input_type, datasets, gene_filter):
      State(pgid('user-url'),"value"),
      State(pgid("input-type"), "value"),
      State(pgid("gene-filter"), "value"),
-     State(pgid("dataset-datatable"), "selected_row_ids"),
-     State(pgid("tumor-type"), "value"),
-     State(pgid("age-group"), "value"),
+     State(pgid('selected-datasets'), "data"),
      State(pgid("cutp"), "value"),
      State(pgid("percentile-slider"),"value"),
-     State(pgid("outcomes"), "value"),
      State(pgid("sg-til-set"), "value"),
      State(pgid("btn-lm-filter"),"on"),
-     State("session-id","data")],
-    prevent_initial_call=True
+     State("session-id","data"),
+     State(pgid('error-msg'), 'submit_n_clicks')],
+    prevent_initial_call=True,
+    background=True,
+    running=[
+    (Output(pgid("loading-res"), "display"), "show", "hide"),
+    (Output(pgid("btn-analyze"), "disabled"), True, no_update)
+            ]
 )
-def submit_analyze(nclicks, file_content, ori_fname, url, input_type, gene_filter, dataset, tumor_type, age_group, cutp, percentiles, outcomes, 
-                   til_set, til_filter, session_id):
+def submit_analyze(nclicks, file_content, ori_fname, url, input_type, gene_filter, dataset, cutp, percentiles, 
+                   til_set, til_filter, session_id, error_nclicks):
     if not nclicks:
         return no_update
     
     dataset = dataset if len(dataset)<2 else dataset[:1]
 
-    ds_invalid, msg = ds_validation(dataset, tumor_type, til_set, til_filter)
-    if ds_invalid:
-        return no_update, no_update, ds_invalid, msg
-    
+    if error_nclicks < 1:
+        ds_invalid, msg = ds_validation(dataset, til_set, til_filter)
+        if ds_invalid:
+            return no_update, no_update, ds_invalid, msg
+
     ## parse file content
     # return the new file name
     
     # print(content_type)
+    new_fname=None
     if input_type == "user_upload":
         try:
             new_fname = os.path.join(TMP_OUTPUT_PATH, f"{session_id}_wgcna_module.csv")
-            msg = parse_file_N_save(file_content, new_fname, "wgcna_module")
+            msg = parse_file_N_save(file_content, ori_fname, new_fname, analysis_type)
             if msg:
                 return no_update, no_update, True, msg
         except:
             return no_update, no_update, True, "uploaded file format is invalid"
 
     analyze_params = {
-        "analyze_type":"wgcna_module",
+        "analyze_type":analysis_type,
         "input_type":input_type,
         "url": url,
         "file_name":ori_fname, 
         "dataset":dataset,
-        "tumor_type":tumor_type,
         "cutp_method": cutp,
         "percentiles": percentiles,
-        "survival_type": outcomes,
-        "case_age_group":age_group,
         "til_set": til_set,
         "til_fil": til_filter,
         "gene_filter": gene_filter
     }
+    res_file = os.path.join(f"{TMP_OUTPUT_PATH}/{session_id}_visualization.json")
+    dataset4r = [dict(
+            project = ds["project"],
+            dataset = ds["dataset"],
+            short = ds2str(ds,sep='_'),
+            surv_type = SURVIVAL_TYPE_KEYS[ds["surv_type"]].val,
+            tumor_type = TUMOR_TYPE_KEYS[ds["tumor_type"]].val,
+            age_grp = CASE_AGE_GROUP_KEYS[ds["age_grp"]].val
+        ) for ds in dataset]
+    rparams = dict( # retain the same structure as the R cmd line parser
+        options = dict(
+            session_id=session_id,
+            analysis_type=analysis_type,
+            input_type=input_type,
+            data_path=new_fname if input_type == "user_upload" else url,
+            gene_filter=gene_filter,
+            datasets=dataset4r,
+            tils=TIL_SET_KEYS[til_set],
+            tils_pval=til_filter,
+            group_method=CUTP_KEYS[cutp]["val"],
+            upper_per = max(percentiles),
+            lower_per = min(percentiles),
+            wd=SCRIPT_PATH,
+            out_dir=TMP_OUTPUT_PATH),
+        args = dict()
+        )
     
+    figdata = dict(params = analyze_params, rparams = rparams)
+
     cmds = ["Rscript",os.path.join(SCRIPT_PATH, "wgcna_module_analysis.R"),
-            "--session_id",session_id,
-            "-A",analyze_params["analyze_type"],
-            "--input_type",input_type,
-            "--data_path",new_fname if input_type == "user_upload" else url,
-            "--datasets", ' '.join(dataset),
-            "--tumor_type",TUMOR_TYPE_KEYS[tumor_type].val,
-            "-S",SURVIVAL_TYPE_KEYS[outcomes]["val"],
-            "--group_method",CUTP_KEYS[cutp]["val"],
-            "--upper_per", str(max(percentiles)),
-            "--lower_per", str(min(percentiles)),
-            "--case_age_group", age_group,
-            "--wd", SCRIPT_PATH,
-            "--out_dir", TMP_OUTPUT_PATH,
-            "--gene_filter", gene_filter]
+            "--use_file", res_file,
+            "--session_id",session_id]
     msg=add_or_update_record(session_id, analyze_params["analyze_type"], 1)
     if msg:
         return dict(), no_update, True, msg
+    with open(res_file, 'wt') as f:
+        json.dump(figdata, f)
     app.logger.info(f"{session_id}-{analyze_params['analyze_type']}: start analysis")
-    subppp = subprocess.Popen(cmds, 
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE)
-    # print(' '.join(cmds))
-    _, res_err = subppp.communicate()
-    subppp.wait()
+    with subprocess.Popen(cmds, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as subppp:
+        # print(subprocess.list2cmdline(cmds))
+        _, res_err = subppp.communicate()
+        subppp.wait()
     res_err = res_err.decode()
     if "[SUCCESS] Pipeline Finished [SSECCUS]" in res_err:
-        res_file = os.path.join(TMP_OUTPUT_PATH, f"{session_id}_visualization.json")
         figdata = None
+        if (input_type == "user_upload") and (new_fname is not None):
+            try:
+                os.remove(new_fname)
+            except FileNotFoundError as e:
+                pass
         try:
             with open(res_file, 'r') as f:
                 figdata = json.load(f)

@@ -10,7 +10,7 @@ def create_navbar():
                 dbc.Row(
                     [
                         dbc.Col(html.Img(src = URL_BASE+"assets/SurvGenie2Logo_page.svg", height= "40px")),
-                        dbc.Col(dbc.NavbarBrand("Survival Genie 2.0", className = "ms-2")),
+                        dbc.Col(dbc.NavbarBrand("Survival Genie 2.0",className = "ms-2")),  #style={"color":"#1B1B1BFF"},
                     ], align="center", className="g-0",
                 ),href=URL_BASE+"home",
                 style={"textDecoration": "none"},
@@ -30,6 +30,7 @@ def create_navbar():
                                 "display": "inline-block",
                                 "fontSize": 15,
                                 "verticalAlign": "center",
+                                "color": "secondary"
                                 },
                             ),
                         ], id = "nav-session-id"),
@@ -68,18 +69,21 @@ def create_navbar():
                         label="More",
                         align_end=True,
                         children=[  # Add as many menu items as you need
-                            dbc.DropdownMenuItem("Referene manual", href=URL_BASE+'home', target="_blank"),
-                            dbc.DropdownMenuItem("Guided tutorial", href=URL_BASE+"home", target="_blank"),
+                            # dbc.DropdownMenuItem("Reference manual", href=URL_BASE+'home', target="_blank"),
+                            dbc.DropdownMenuItem("Tutorial", href=URL_BASE+"home", target="_blank"),
+                            dbc.DropdownMenuItem("Help", href=URL_BASE+"help", target="_blank"),
                             dbc.DropdownMenuItem(divider=True),
                             dbc.DropdownMenuItem("About Us", href="https://bhasinlab.org/", target="_blank"),#URL_BASE+'about'
-                            dbc.DropdownMenuItem("Contact", href="https://bhasinlab.org/contact-us/", target="_blank"),#URL_BASE+'contact'
+                            dbc.DropdownMenuItem("Contact", href=URL_BASE+'contact', target="_blank"),#URL_BASE+'contact'
                         ],
                     ),
                 ], horizontal ="end"),
                 id="navbar-collapse",
                 is_open=False,
                 navbar=True,)], class_name="d-flex", justify="end")
-        ])
+        ]),
+    color="light",
+    dark=False
         # brand='Survival Genie 2.0',
         # brand_href=URL_BASE+"home",
         # sticky="top",

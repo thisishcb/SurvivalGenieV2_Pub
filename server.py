@@ -6,10 +6,14 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import func
 from flask_migrate import Migrate
 
+from configs import reCAPTCHA_SEC, reCAPTCHA_SITE
+
 server = Flask(__name__)
 server.app_context().push()
 server.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///survivalgenie2.db"
 server.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+server.config['RECAPTCHA_SITEKEY'] = reCAPTCHA_SITE
+server.config['RECAPTCHA_SECRET'] = reCAPTCHA_SEC
 
 db = SQLAlchemy(server)
 migrate = Migrate(server, db)
@@ -45,11 +49,11 @@ class task_tb(db.Model):
         self.visit_freq += 1
 
     def __str__(self):
-        status_keys = {0:"Finished",
-                1:"Processing",
-                2:"Failed",
-                3:"Expired",
-                4:"Protected"}
-        return f'Session {self.ssid} is {status_keys[self.status]}'
+        status_keys = {0:"is Finished",
+                1:"is Processing",
+                2:"has Failed",
+                3:"has Expired",
+                4:"is Protected"}
+        return f'Session {self.ssid} {status_keys[self.status]}'
 
 db.create_all() # does nothing if the table is there but will update fields

@@ -8,3 +8,12 @@ filter_ages <- function(ds, group, cutoff=20) {
     }
     return(case_ages$diagnosis_id)
 }
+
+filter_ages_in_clios <- function(clios, group, cutoff=20) {
+    if (toupper(group)=="ADULT"){
+        return(clios$sample[clios$age_at_diagnosis>=cutoff])
+    } else if (toupper(group)=="PEDIATRIC") {
+        return(clios$sample[clios$age_at_diagnosis<cutoff])
+    }
+    return(clios$sample)
+}

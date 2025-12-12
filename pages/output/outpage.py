@@ -28,10 +28,14 @@ pgid = id_factory("out-visual")
 def layout(analysis_type=None, **other_unknown_query_strings):
     titles = {
         "single_gene": "Single Gene Analysis Result Visualization",
+        "multi_sg": "Multiple Single Genes Analyses Result Visualization",
         "gene_ratio": "Gene Ratio Analysis Result Visualization",
         "gene_set": "Gene Set Analysis Result Visualization",
+        "gene_set_contrast":"Example Gene Set Contrast Analysis Result Visualization",
         "cluster_marker": "Cluster Marker Analysis Result Visualization",
-        "wgcna_module": "WGCNA module Analysis Result Visualization"
+        "wgcna_module": "WGCNA module Analysis Result Visualization",
+        "grn_module": "GRN Analysis Result Visualization",
+        "lrsignal": "Ligand-Receptor Signaling Analysis Result Visualization"
     }
 
     if not analysis_type or analysis_type=="none":
@@ -47,7 +51,7 @@ def layout(analysis_type=None, **other_unknown_query_strings):
                 children=titles[analysis_type],
                 id=pgid("title"), className="my-1",
                 ),
-            btn_text = "Show Prameters",
+            btn_text = "Show Parameters",
             collapse_id=pgid("review-collapse"),
             cardbody= dbc.CardBody([REVIEW_CARD]),
             default_isopen = True
@@ -68,8 +72,26 @@ def layout(analysis_type=None, **other_unknown_query_strings):
 collapse_callback(pgid("review-collapse"))
 collapse_callback(pgid("plot-tabs-collapse"))
 collapse_callback(pgid("plot-inter-collapse"))
+
+# if analysis_type in ["gene_set_contrast"]:
+collapse_callback(pgid("review-genes-pos"),prevent_initial_call=True)
+collapse_callback(pgid("review-genes-neg"),prevent_initial_call=True)
+# else:
 collapse_callback(pgid("review-genes"),prevent_initial_call=True)
 # ---- ---- ---- ---- ---- ---- ---- ---- ---- ---- 
 
 plt_callbacks_general(pgid)
 plt_callbacks_forestplt(pgid)
+
+clientside_callback(
+    """
+    function(nclick,button_id){
+        downloadPlotSVG(button_id.index)
+        return(nclick);
+    }
+    """,
+    Output({'type': pgid('save-btn-plot'), 'index': dash.MATCH}, 'n_clicks'),
+    Input({'type': pgid('save-btn-plot'), 'index': dash.MATCH}, 'n_clicks'),
+    State({'type': pgid('save-btn-plot'), 'index': dash.MATCH}, 'id'),
+    prevent_initial_call=True
+)

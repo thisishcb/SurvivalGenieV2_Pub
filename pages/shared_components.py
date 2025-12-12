@@ -1,7 +1,7 @@
 import dash_bootstrap_components as dbc
 import dash_mantine_components as dmc
 from dash import dcc, html, Input, Output, State, callback, clientside_callback, no_update, dash_table, Patch
-from utils import BS_COLORS
+from utils import BS_COLORS, ds2str
 
 
 def collapse_card(title,btn_text,collapse_id,cardbody,default_isopen=False):
@@ -85,6 +85,72 @@ def error_page(message,error_type="Page Not Found"):
     )
     return layout
 
+def ds_review(id_factory, ds):
+    ds_str = ds2str(ds,sep='-')
+    long_str = ds2str(ds, mode="verbose")
+    return [
+        html.A(
+            [ds2str(ds,sep=' | '), html.Br()],
+            id=id_factory(f"review-{ds_str}"),
+            n_clicks=0,
+            ),
+        dbc.Popover(
+            dbc.PopoverBody(long_str,style={"font-size":"0.8rem"},),
+            target=id_factory(f"review-{ds_str}"),
+            trigger="legacy",
+            )
+        ]
+
+def long_gene_review(id_factory, title=None, genes=None, theme="dark", postfixes=None):
+    space4genes = []
+    if postfixes is None:
+        space4genes  = [
+            html.A(
+                title,
+                id=id_factory("review-genes-btn"),
+                n_clicks=0,
+                ),
+            dbc.Collapse(
+                html.Span(genes,style={"color": BS_COLORS[theme], "font-size":"0.8rem"}, id = id_factory("review-genes-detail")),
+                id=id_factory("review-genes"),
+                is_open=False,
+                )
+            ]
+    else:
+        if type(postfixes) == list:
+            for idx, postfix in enumerate(postfixes):
+                postfix = postfix if postfix[0] == '-' else f"-{postfix}"
+                if idx > 0:
+                    space4genes.append(html.Br()) 
+                space4genes.extend([
+                    html.A(
+                        None if not title else title[idx],
+                        id=id_factory(f"review-genes{postfix}-btn"),
+                        n_clicks=0,
+                        ),
+                    dbc.Collapse(
+                        html.Span(None if not genes else genes[idx],style={"color": BS_COLORS[theme], "font-size":"0.8rem"}, id = id_factory(f"review-genes-detail{postfix}")),
+                        id=id_factory(f"review-genes{postfix}"),
+                        is_open=False,
+                        )
+                ])
+        else:
+            postfixes = postfixes if postfixes[0] == '-' else f"-{postfixes}"
+            space4genes  = [
+                html.A(
+                    title,
+                    id=id_factory(f"review-genes{postfixes}-btn"),
+                    n_clicks=0,
+                    ),
+                dbc.Collapse(
+                    html.Span(genes,style={"color": BS_COLORS[theme], "font-size":"0.8rem"}, id = id_factory(f"review-genes-detail{postfixes}")),
+                    id=id_factory(f"review-genes{postfixes}"),
+                    is_open=False,
+                    )
+            ]
+
+    return space4genes
+
 def review_card_content(id_factory, analysis_type, long_gene_list=None, **kwargs):
     """
     serves the gene inputs
@@ -94,20 +160,11 @@ def review_card_content(id_factory, analysis_type, long_gene_list=None, **kwargs
     rv_datasets = kwargs.pop("rv_datasets", "")
     rv_cutp = kwargs.pop("rv_cutp", "")
     rv_surv = kwargs.pop("rv_surv", "")
-    rv_til = kwargs.pop("rv_til", "Please select a TIL set.")
+    rv_til = kwargs.pop("rv_til", "Please select a signature immune cell set.")
+    rv_postfixes = kwargs.pop("rv_postfixes", None)
     if long_gene_list is None:
-        long_gene_list = True if analysis_type in ["gene_set"] else False
-    space4genes  = [
-        html.A(
-            id=id_factory("review-genes-btn"),
-            n_clicks=0,
-            ),
-        dbc.Collapse(
-            html.Span(style={"color": BS_COLORS["light"], "font-size":"0.8rem"}, id = id_factory("review-genes-detail")),
-            id=id_factory("review-genes"),
-            is_open=False,
-            )
-        ]
+        long_gene_list = True if analysis_type in ["gene_set", "gene_set_contrast", "lrsignal"] else False
+    space4genes  = long_gene_review(id_factory, title=None, genes=None, theme="light", postfixes = rv_postfixes)
     rv_genes = rv_genes if rv_genes else space4genes if long_gene_list else "Please provide genes of interest."
     return dbc.Row(
             [
@@ -121,10 +178,6 @@ def review_card_content(id_factory, analysis_type, long_gene_list=None, **kwargs
                         html.H6("Datasets: ", style={"margin-top": "15px"}),
                         html.P(children=rv_datasets, id=id_factory("dataset-review"))
                         ]),
-                    html.Div([
-                        html.H6("TIL set: ", style={"margin-top": "15px"}),
-                        html.P(children=rv_til, id=id_factory("til-review")),
-                        ])
                     ]),
                 dbc.Col([
                     html.Div([
@@ -132,9 +185,13 @@ def review_card_content(id_factory, analysis_type, long_gene_list=None, **kwargs
                         html.P(children=rv_cutp, id=id_factory("cutp-review"))
                         ]),
                     html.Div([
-                        html.H6("Survival outcomes: ", style={"margin-top": "15px"}),
-                        html.P(children=rv_surv, id=id_factory("outcome-review"))
+                        html.H6("Immune cell set: ", style={"margin-top": "15px"}),
+                        html.P(children=rv_til, id=id_factory("til-review")),
                         ])
+                    # html.Div([
+                    #     html.H6("Survival outcomes: ", style={"margin-top": "15px"}),
+                    #     html.P(children=rv_surv, id=id_factory("outcome-review"))
+                    #     ])
                     ]),
             ]
         )
